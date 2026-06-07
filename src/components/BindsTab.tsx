@@ -1,5 +1,10 @@
 import { useMemo, useState } from 'react';
 import { BindEntry, LogEntry, Pulseira } from '../types';
+import {
+  buildLocPulseiraCommands,
+  limitPulseiraCodes,
+  MAX_PULSEIRAS_PER_COMMAND,
+} from '../utils/pulseiras';
 
 interface BindsTabProps {
   binds: BindEntry[];
@@ -85,6 +90,9 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
     return pulseiras.map((p) => p.codigo);
   }, [pulseiras, selectedBatchCodes]);
 
+  const limitedBatchCodes = useMemo(() => limitPulseiraCodes(selectedCodes), [selectedCodes]);
+  const ignoredBatchCount = Math.max(0, selectedCodes.length - limitedBatchCodes.length);
+
   const getComando = () => {
     if (tipo === 'locpulseira') {
       return `locpulseira ${codigoPulseira.trim().toUpperCase()}`;
@@ -94,10 +102,7 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
 
   const getBindLine = (bind: BindEntry) => `bind keyboard ${bind.key} "${bind.comando}"`;
 
-  const getBatchCommand = () => {
-    const realSeparator = batchSeparator === '\n' ? '\n' : batchSeparator;
-    return selectedCodes.map((code) => `locpulseira ${code}`).join(realSeparator);
-  };
+  const getBatchCommand = () => buildLocPulseiraCommands(limitedBatchCodes, batchSeparator);
 
   const isKeyUsed = (targetKey: string) => binds.some((bind) => bind.key === targetKey);
 
@@ -154,12 +159,12 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
     }
 
     const comando = getBatchCommand();
-    const quantidade = selectedCodes.length;
+    const quantidade = limitedBatchCodes.length;
 
     const novo: BindEntry = {
       id: crypto.randomUUID(),
       key: batchKey,
-      codigoPulseira: quantidade === 1 ? selectedCodes[0] : `${quantidade} pulseiras`,
+      codigoPulseira: quantidade === 1 ? limitedBatchCodes[0] : `${quantidade} pulseiras`,
       descricao: batchDescricao.trim() || `Localizar ${quantidade} pulseiras`,
       tipo: 'custom',
       comando,
@@ -168,7 +173,10 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
     setBinds((prev) => [...prev, novo]);
     addLog({
       type: 'bind',
-      message: `Bind em lote criado: ${batchKey} → ${quantidade} pulseiras`,
+      message:
+        ignoredBatchCount > 0
+          ? `Bind em lote criado: ${batchKey} → ${quantidade} pulseiras (${ignoredBatchCount} fora por limite)`
+          : `Bind em lote criado: ${batchKey} → ${quantidade} pulseiras`,
     });
 
     setBatchDescricao('');
@@ -266,6 +274,7 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
           <p className="text-gray-400 text-xs mt-1">
             Escolhe uma tecla e cria automaticamente um bind do tipo:
             <span className="font-mono text-green-400"> bind keyboard TECLA "locpulseira ...;locpulseira ..."</span>
+            {' '}com limite de <strong className="text-white">{MAX_PULSEIRAS_PER_COMMAND}</strong> pulseiras por bind.
           </p>
         </div>
 
@@ -348,9 +357,14 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
               </div>
               <p className="text-gray-500 text-xs mt-2">
                 {selectedBatchCodes.length === 0
-                  ? `Sem seleção manual: vai usar todas (${pulseiras.length})`
-                  : `Selecionadas ${selectedBatchCodes.length} pulseiras para o bind`}
+                  ? `Sem seleção manual: vai usar até ${MAX_PULSEIRAS_PER_COMMAND} de ${pulseiras.length}`
+                  : `Selecionadas ${selectedBatchCodes.length}; entram ${limitedBatchCodes.length} no bind`}
               </p>
+              {ignoredBatchCount > 0 && (
+                <p className="text-amber-400 text-xs mt-1">
+                  {ignoredBatchCount} ficaram fora do bind por causa do limite.
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -358,6 +372,7 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
         {selectedCodes.length > 0 && (
           <div className="bg-gray-950 rounded-lg px-4 py-3 border border-gray-700 space-y-2">
             <p className="text-gray-500 text-xs">Preview do bind em lote:</p>
+            <p className="text-xs text-gray-400">Entram {limitedBatchCodes.length} pulseiras no comando.</p>
             <code className="text-green-400 text-xs sm:text-sm font-mono whitespace-pre-wrap break-all block">
               bind keyboard {batchKey} "{getBatchCommand()}"
             </code>
@@ -370,10 +385,10 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
             disabled={pulseiras.length === 0 || selectedCodes.length === 0}
             className="bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
           >
-            Criar Bind com Todas
+            Criar Bind com até {MAX_PULSEIRAS_PER_COMMAND}
           </button>
           <p className="text-gray-500 text-xs self-center">
-            Dica: se não escolheres pulseiras manualmente, ele mete todas automaticamente.
+            Dica: se não escolheres pulseiras manualmente, ele usa automaticamente até {MAX_PULSEIRAS_PER_COMMAND}.
           </p>
         </div>
       </div>

@@ -5,6 +5,7 @@ interface HeaderProps {
   setActiveTab: (tab: Tab) => void;
   totalPulseiras: number;
   totalBinds: number;
+  totalProfiles: number;
 }
 
 const tabs: { id: Tab; label: string; icon: string }[] = [
@@ -14,7 +15,7 @@ const tabs: { id: Tab; label: string; icon: string }[] = [
   { id: 'gerador', label: 'Gerador', icon: '⚡' },
 ];
 
-export default function Header({ activeTab, setActiveTab, totalPulseiras, totalBinds }: HeaderProps) {
+export default function Header({ activeTab, setActiveTab, totalPulseiras, totalBinds, totalProfiles }: HeaderProps) {
   return (
     <header className="bg-gray-900 border-b border-gray-700 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 py-3">
@@ -32,6 +33,10 @@ export default function Header({ activeTab, setActiveTab, totalPulseiras, totalB
             <div className="bg-gray-800 border border-gray-600 rounded-lg px-3 py-1.5 text-center">
               <p className="text-blue-400 font-bold text-lg leading-none">{totalPulseiras}</p>
               <p className="text-gray-500 text-xs">Pulseiras</p>
+            </div>
+            <div className="bg-gray-800 border border-gray-600 rounded-lg px-3 py-1.5 text-center">
+              <p className="text-amber-400 font-bold text-lg leading-none">{totalProfiles}</p>
+              <p className="text-gray-500 text-xs">Perfis</p>
             </div>
             <div className="bg-gray-800 border border-gray-600 rounded-lg px-3 py-1.5 text-center">
               <p className="text-purple-400 font-bold text-lg leading-none">{totalBinds}</p>

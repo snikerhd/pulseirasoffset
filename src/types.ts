@@ -8,7 +8,7 @@ export interface Pulseira {
 
 export interface LogEntry {
   id: string;
-  type: 'add' | 'remove' | 'locate' | 'bind' | 'copy';
+  type: 'add' | 'remove' | 'locate' | 'bind' | 'copy' | 'profile';
   message: string;
   timestamp: string;
   codigo?: string;
@@ -21,6 +21,14 @@ export interface BindEntry {
   descricao: string;
   tipo: 'locpulseira' | 'custom';
   comando: string;
+}
+
+export interface ProfileEntry {
+  id: string;
+  nome: string;
+  codigos: string[];
+  createdAt: string;
+  source: 'manual' | 'import';
 }
 
 export type Tab = 'pulseiras' | 'logs' | 'binds' | 'gerador';
