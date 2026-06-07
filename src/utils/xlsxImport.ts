@@ -8,11 +8,23 @@ export interface XlsxPulseiraRow {
   rowNumber: number;
 }
 
+export interface XlsxColumnOption {
+  key: string;
+  label: string;
+  index: number;
+}
+
 export interface XlsxImportResult {
   rows: XlsxPulseiraRow[];
   pulseiraColumn: string | null;
   nomeColumn: string | null;
   sheetNames: string[];
+  columns: XlsxColumnOption[];
+}
+
+interface ParseSheetDataOptions {
+  selectedPulseiraColumnKey?: string | null;
+  selectedNomeColumnKey?: string | null;
 }
 
 const PULSEIRA_CANDIDATES = [
@@ -59,17 +71,24 @@ function cellToString(value: unknown) {
   return String(value ?? '').trim();
 }
 
+function isValidPulseiraCode(value: string) {
+  return value.length >= 5 && /[A-Z]/.test(value) && /\d/.test(value);
+}
+
 function extractCode(value: unknown) {
   const text = cellToString(value).toUpperCase();
   if (!text) return '';
 
   const locMatch = text.match(/LOCPULSEIRA\s+([A-Z0-9]{5,})/);
-  if (locMatch?.[1]) return locMatch[1];
+  if (locMatch?.[1] && isValidPulseiraCode(locMatch[1])) return locMatch[1];
 
   const matches = text.match(/[A-Z0-9]{5,}/g) ?? [];
   const cleaned = matches
     .map((item) => item.replace(/[^A-Z0-9]/g, ''))
-    .filter((item) => item.length >= 5 && item !== 'LOCPULSEIRA' && item !== 'KEYBOARD');
+    .filter(
+      (item) =>
+        isValidPulseiraCode(item) && item !== 'LOCPULSEIRA' && item !== 'KEYBOARD'
+    );
 
   if (cleaned.length === 0) return '';
   return cleaned.sort((a, b) => b.length - a.length)[0];
@@ -175,7 +194,12 @@ function inferPulseiraColumnIndex(data: unknown[][], startRow: number, maxCols: 
   return bestScore >= 1 ? bestIndex : null;
 }
 
-function inferNameColumnIndex(data: unknown[][], startRow: number, maxCols: number, pulseiraColumnIndex: number | null) {
+function inferNameColumnIndex(
+  data: unknown[][],
+  startRow: number,
+  maxCols: number,
+  pulseiraColumnIndex: number | null
+) {
   let bestIndex: number | null = null;
   let bestScore = 0;
 
@@ -206,46 +230,50 @@ function makeDisplayHeaders(rawHeaders: string[], maxCols: number) {
   return Array.from({ length: maxCols }, (_, index) => rawHeaders[index] || `__EMPTY_${index}`);
 }
 
-export async function parseXlsxPulseiras(file: File): Promise<XlsxImportResult> {
-  const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: 'array' });
+function makeColumns(displayHeaders: string[]) {
+  return displayHeaders.map((label, index) => ({
+    key: `${index}:${label}`,
+    label,
+    index,
+  }));
+}
+
+function parseSheetData(
+  rawData: unknown[][],
+  sheetName: string,
+  options: ParseSheetDataOptions = {}
+) {
+  const { rowIndex: headerRowIndex, headers: detectedHeaders } = findHeaderRow(rawData);
+  const maxCols = Math.max(...rawData.map((row) => row.length), 0);
+  const displayHeaders = makeDisplayHeaders(detectedHeaders, maxCols);
+  const columns = makeColumns(displayHeaders);
+
+  let pulseiraColumnIndex = detectedHeaders.length > 0 ? findBestHeaderIndex(detectedHeaders, PULSEIRA_CANDIDATES) : null;
+  let nomeColumnIndex = detectedHeaders.length > 0 ? findBestHeaderIndex(detectedHeaders, NAME_CANDIDATES) : null;
+
+  if (options.selectedPulseiraColumnKey) {
+    const selected = columns.find((column) => column.key === options.selectedPulseiraColumnKey);
+    if (selected) pulseiraColumnIndex = selected.index;
+  }
+
+  if (options.selectedNomeColumnKey) {
+    const selected = columns.find((column) => column.key === options.selectedNomeColumnKey);
+    if (selected) nomeColumnIndex = selected.index;
+  }
+
+  const dataStartRow = detectedHeaders.length > 0 ? headerRowIndex + 1 : 0;
+
+  if (pulseiraColumnIndex === null) {
+    pulseiraColumnIndex = inferPulseiraColumnIndex(rawData, dataStartRow, maxCols);
+  }
+
+  if (nomeColumnIndex === null) {
+    nomeColumnIndex = inferNameColumnIndex(rawData, dataStartRow, maxCols, pulseiraColumnIndex);
+  }
 
   const rows: XlsxPulseiraRow[] = [];
-  let pulseiraColumn: string | null = null;
-  let nomeColumn: string | null = null;
 
-  for (const sheetName of workbook.SheetNames) {
-    const worksheet = workbook.Sheets[sheetName];
-    const rawData = XLSX.utils.sheet_to_json<unknown[]>(worksheet, { header: 1, defval: '' });
-    if (rawData.length === 0) continue;
-
-    const { rowIndex: headerRowIndex, headers: detectedHeaders } = findHeaderRow(rawData);
-    const maxCols = Math.max(...rawData.map((row) => row.length), 0);
-    const displayHeaders = makeDisplayHeaders(detectedHeaders, maxCols);
-
-    let pulseiraColumnIndex = detectedHeaders.length > 0 ? findBestHeaderIndex(detectedHeaders, PULSEIRA_CANDIDATES) : null;
-    let nomeColumnIndex = detectedHeaders.length > 0 ? findBestHeaderIndex(detectedHeaders, NAME_CANDIDATES) : null;
-
-    const dataStartRow = detectedHeaders.length > 0 ? headerRowIndex + 1 : 0;
-
-    if (pulseiraColumnIndex === null) {
-      pulseiraColumnIndex = inferPulseiraColumnIndex(rawData, dataStartRow, maxCols);
-    }
-
-    if (nomeColumnIndex === null) {
-      nomeColumnIndex = inferNameColumnIndex(rawData, dataStartRow, maxCols, pulseiraColumnIndex);
-    }
-
-    if (!pulseiraColumn && pulseiraColumnIndex !== null) {
-      pulseiraColumn = displayHeaders[pulseiraColumnIndex] ?? `__EMPTY_${pulseiraColumnIndex}`;
-    }
-
-    if (!nomeColumn && nomeColumnIndex !== null) {
-      nomeColumn = displayHeaders[nomeColumnIndex] ?? `__EMPTY_${nomeColumnIndex}`;
-    }
-
-    if (pulseiraColumnIndex === null) continue;
-
+  if (pulseiraColumnIndex !== null) {
     for (let rowIndex = dataStartRow; rowIndex < rawData.length; rowIndex += 1) {
       const row = rawData[rowIndex] ?? [];
       const codigo = extractCode(row[pulseiraColumnIndex]);
@@ -262,6 +290,43 @@ export async function parseXlsxPulseiras(file: File): Promise<XlsxImportResult> 
     }
   }
 
+  return {
+    rows,
+    columns,
+    pulseiraColumn: pulseiraColumnIndex !== null ? displayHeaders[pulseiraColumnIndex] : null,
+    nomeColumn: nomeColumnIndex !== null ? displayHeaders[nomeColumnIndex] : null,
+  };
+}
+
+export async function parseXlsxPulseiras(
+  file: File,
+  options: ParseSheetDataOptions = {}
+): Promise<XlsxImportResult> {
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: 'array' });
+
+  const rows: XlsxPulseiraRow[] = [];
+  let pulseiraColumn: string | null = null;
+  let nomeColumn: string | null = null;
+  let columns: XlsxColumnOption[] = [];
+
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    const rawData = XLSX.utils.sheet_to_json<unknown[]>(worksheet, { header: 1, defval: '' });
+    if (rawData.length === 0) continue;
+
+    const parsed = parseSheetData(rawData, sheetName, options);
+
+    if (columns.length === 0 && parsed.columns.length > 0) {
+      columns = parsed.columns;
+    }
+
+    if (!pulseiraColumn && parsed.pulseiraColumn) pulseiraColumn = parsed.pulseiraColumn;
+    if (!nomeColumn && parsed.nomeColumn) nomeColumn = parsed.nomeColumn;
+
+    rows.push(...parsed.rows);
+  }
+
   const uniqueRowCodes = uniqueCodes(rows.map((row) => row.codigo));
   const dedupedRows = uniqueRowCodes
     .map((codigo) => rows.find((row) => row.codigo === codigo))
@@ -272,5 +337,6 @@ export async function parseXlsxPulseiras(file: File): Promise<XlsxImportResult> 
     pulseiraColumn,
     nomeColumn,
     sheetNames: workbook.SheetNames,
+    columns,
   };
 }

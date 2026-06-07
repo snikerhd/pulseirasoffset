@@ -62,8 +62,11 @@ export default function PulseirasTab({
   const [profilePages, setProfilePages] = useState<Record<string, number>>({});
   const [xlsxPreview, setXlsxPreview] = useState<XlsxImportResult | null>(null);
   const [xlsxFileName, setXlsxFileName] = useState('');
+  const [xlsxFile, setXlsxFile] = useState<File | null>(null);
   const [isReadingXlsx, setIsReadingXlsx] = useState(false);
   const [deleteMode, setDeleteMode] = useState(false);
+  const [selectedXlsxPulseiraColumn, setSelectedXlsxPulseiraColumn] = useState('');
+  const [selectedXlsxNomeColumn, setSelectedXlsxNomeColumn] = useState('');
 
   const parsedImportCodes = useMemo(() => parsePulseiraCodes(importText), [importText]);
 
@@ -194,6 +197,14 @@ export default function PulseirasTab({
         ? `resultados da pesquisa (${filtradas.length})`
         : `todas as pulseiras (${pulseiras.length})`;
 
+  const handlePreviousCopyPage = () => {
+    setCopyPage((prev) => (prev > 0 ? prev - 1 : 0));
+  };
+
+  const handleNextCopyPage = () => {
+    setCopyPage((prev) => (prev < copyGroups.length - 1 ? prev + 1 : prev));
+  };
+
   const handleCopyPage = (pageIndex: number) => {
     const pageCodes = copyGroups[pageIndex] ?? [];
     if (pageCodes.length === 0) return;
@@ -298,7 +309,14 @@ export default function PulseirasTab({
     try {
       const parsed = await parseXlsxPulseiras(file);
       setXlsxPreview(parsed);
+      setXlsxFile(file);
       setXlsxFileName(file.name);
+      setSelectedXlsxPulseiraColumn(
+        parsed.columns.find((column) => column.label === parsed.pulseiraColumn)?.key || ''
+      );
+      setSelectedXlsxNomeColumn(
+        parsed.columns.find((column) => column.label === parsed.nomeColumn)?.key || ''
+      );
 
       if (parsed.rows.length === 0) {
         showMessage('O XLSX foi lido, mas não encontrei uma coluna de pulseira válida.');
@@ -308,11 +326,39 @@ export default function PulseirasTab({
     } catch (error) {
       console.error(error);
       setXlsxPreview(null);
+      setXlsxFile(null);
       setXlsxFileName('');
+      setSelectedXlsxPulseiraColumn('');
+      setSelectedXlsxNomeColumn('');
       alert('Não foi possível ler o ficheiro XLSX. Verifica se o ficheiro está correto.');
     } finally {
       setIsReadingXlsx(false);
       event.target.value = '';
+    }
+  };
+
+  const handleReparseXlsxColumns = async (
+    pulseiraColumnKey: string,
+    nomeColumnKey: string
+  ) => {
+    if (!xlsxFile) return;
+
+    setIsReadingXlsx(true);
+
+    try {
+      const reparsed = await parseXlsxPulseiras(xlsxFile, {
+        selectedPulseiraColumnKey: pulseiraColumnKey || null,
+        selectedNomeColumnKey: nomeColumnKey || null,
+      });
+      setXlsxPreview(reparsed);
+      setSelectedXlsxPulseiraColumn(pulseiraColumnKey);
+      setSelectedXlsxNomeColumn(nomeColumnKey);
+      showMessage(`Excel atualizado com as colunas escolhidas manualmente.`);
+    } catch (error) {
+      console.error(error);
+      alert('Não foi possível atualizar as colunas do Excel.');
+    } finally {
+      setIsReadingXlsx(false);
     }
   };
 
@@ -348,7 +394,10 @@ export default function PulseirasTab({
 
     setImportProfileName('');
     setXlsxPreview(null);
+    setXlsxFile(null);
     setXlsxFileName('');
+    setSelectedXlsxPulseiraColumn('');
+    setSelectedXlsxNomeColumn('');
     setShowImport(false);
 
     showMessage(
@@ -564,18 +613,18 @@ export default function PulseirasTab({
                       </p>
                       <div className="flex gap-2">
                         <button
-                          onClick={() => setCopyPage((prev) => Math.max(prev - 1, 0))}
+                          onClick={handlePreviousCopyPage}
                           disabled={copyPage === 0}
-                          className="px-2.5 py-1 rounded-md bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-gray-300"
+                          className="px-3 py-1.5 rounded-md bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-gray-300"
                         >
-                          ←
+                          Página anterior
                         </button>
                         <button
-                          onClick={() => setCopyPage((prev) => Math.min(prev + 1, copyGroups.length - 1))}
+                          onClick={handleNextCopyPage}
                           disabled={copyPage >= copyGroups.length - 1}
-                          className="px-2.5 py-1 rounded-md bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-gray-300"
+                          className="px-3 py-1.5 rounded-md bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-gray-300"
                         >
-                          →
+                          Página seguinte
                         </button>
                       </div>
                     </div>
@@ -733,7 +782,7 @@ export default function PulseirasTab({
                     </label>
                   </div>
 
-                  <div className="rounded-lg border border-gray-700 bg-gray-900/70 p-3 space-y-2">
+                  <div className="rounded-lg border border-gray-700 bg-gray-900/70 p-3 space-y-3">
                     <p className="text-gray-500 text-xs">Leitura do Excel</p>
                     {xlsxPreview ? (
                       <>
@@ -743,6 +792,46 @@ export default function PulseirasTab({
                           <p>Coluna pulseira/CC: <span className="text-white">{xlsxPreview.pulseiraColumn ?? 'não encontrada'}</span></p>
                           <p>Coluna nome: <span className="text-white">{xlsxPreview.nomeColumn ?? 'não encontrada'}</span></p>
                         </div>
+
+                        <div className="rounded-lg border border-amber-800 bg-amber-900/20 px-3 py-2 text-xs text-amber-300">
+                          Se a coluna da DBC estiver a atrapalhar, escolhe manualmente a coluna do <strong className="text-white">CC / pulseira</strong> e a coluna do <strong className="text-white">nome</strong> aqui em baixo.
+                        </div>
+
+                        {xlsxPreview.columns.length > 0 && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-gray-400 text-xs mb-1 block">Selecionar coluna da pulseira / CC</label>
+                              <select
+                                value={selectedXlsxPulseiraColumn}
+                                onChange={(e) => handleReparseXlsxColumns(e.target.value, selectedXlsxNomeColumn)}
+                                className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500"
+                              >
+                                <option value="">Auto detetar</option>
+                                {xlsxPreview.columns.map((column) => (
+                                  <option key={`pulseira-${column.key}`} value={column.key}>
+                                    {column.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-gray-400 text-xs mb-1 block">Selecionar coluna do nome</label>
+                              <select
+                                value={selectedXlsxNomeColumn}
+                                onChange={(e) => handleReparseXlsxColumns(selectedXlsxPulseiraColumn, e.target.value)}
+                                className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500"
+                              >
+                                <option value="">Sem coluna de nome</option>
+                                {xlsxPreview.columns.map((column) => (
+                                  <option key={`nome-${column.key}`} value={column.key}>
+                                    {column.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+
                         {xlsxPreview.rows.length > 0 && (
                           <div className="rounded-lg border border-gray-800 bg-gray-950 p-2 max-h-28 overflow-y-auto space-y-1">
                             {xlsxPreview.rows.slice(0, 5).map((row) => (
@@ -942,16 +1031,16 @@ export default function PulseirasTab({
                           <button
                             onClick={() => handleProfilePageChange(profile.id, pageIndex - 1, pages.length)}
                             disabled={pageIndex === 0}
-                            className="px-2.5 py-1 rounded-md bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-gray-300"
+                            className="px-3 py-1.5 rounded-md bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-gray-300"
                           >
-                            ←
+                            Página anterior
                           </button>
                           <button
                             onClick={() => handleProfilePageChange(profile.id, pageIndex + 1, pages.length)}
                             disabled={pageIndex >= pages.length - 1}
-                            className="px-2.5 py-1 rounded-md bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-gray-300"
+                            className="px-3 py-1.5 rounded-md bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-gray-300"
                           >
-                            →
+                            Página seguinte
                           </button>
                         </div>
                       </div>
