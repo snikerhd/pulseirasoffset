@@ -12,7 +12,6 @@ const logIcon: Record<string, string> = {
   locate: '📍',
   bind: '🎮',
   copy: '📋',
-  profile: '👥',
 };
 
 const logColor: Record<string, string> = {
@@ -21,7 +20,6 @@ const logColor: Record<string, string> = {
   locate: 'text-blue-400 border-blue-800 bg-blue-900/10',
   bind: 'text-purple-400 border-purple-800 bg-purple-900/10',
   copy: 'text-yellow-400 border-yellow-800 bg-yellow-900/10',
-  profile: 'text-amber-400 border-amber-800 bg-amber-900/10',
 };
 
 const logTypelabel: Record<string, string> = {
@@ -30,7 +28,6 @@ const logTypelabel: Record<string, string> = {
   locate: 'LOCALIZAR',
   bind: 'BIND',
   copy: 'CÓPIA',
-  profile: 'PERFIL',
 };
 
 export default function LogsTab({ logs, setLogs }: LogsTabProps) {
@@ -91,7 +88,6 @@ export default function LogsTab({ logs, setLogs }: LogsTabProps) {
           <option value="locate">Localizar</option>
           <option value="bind">Binds</option>
           <option value="copy">Cópias</option>
-          <option value="profile">Perfis</option>
         </select>
         <button
           onClick={exportLogs}
@@ -111,7 +107,7 @@ export default function LogsTab({ logs, setLogs }: LogsTabProps) {
 
       {/* Stats */}
       {logs.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
           {Object.entries(logTypelabel).map(([type, label]) => {
             const count = logs.filter((l) => l.type === type).length;
             return (
