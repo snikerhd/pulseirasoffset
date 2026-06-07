@@ -4,12 +4,11 @@ export interface Pulseira {
   descricao: string;
   cor: string;
   createdAt: string;
-  nomePessoa?: string; // nome da pessoa associada (importado do Excel)
 }
 
 export interface LogEntry {
   id: string;
-  type: 'add' | 'remove' | 'locate' | 'bind' | 'copy';
+  type: 'add' | 'remove' | 'locate' | 'bind' | 'copy' | 'profile';
   message: string;
   timestamp: string;
   codigo?: string;
@@ -24,11 +23,12 @@ export interface BindEntry {
   comando: string;
 }
 
-export interface Perfil {
+export interface ProfileEntry {
   id: string;
   nome: string;
-  pulseiras: string[]; // array de códigos
+  codigos: string[];
   createdAt: string;
+  source: 'manual' | 'import';
 }
 
-export type Tab = 'pulseiras' | 'logs' | 'binds' | 'gerador' | 'perfis';
+export type Tab = 'pulseiras' | 'logs' | 'binds' | 'gerador';
