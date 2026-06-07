@@ -15,10 +15,6 @@ export interface XlsxImportResult {
   sheetNames: string[];
 }
 
-const BRACELET_CODE_LENGTH = 8;
-const FORCED_NAME_COLUMN_INDEX = 3;
-const FORCED_PULSEIRA_COLUMN_INDEX = 4;
-
 const PULSEIRA_CANDIDATES = [
   'pulseira',
   'codigo pulseira',
@@ -63,30 +59,20 @@ function cellToString(value: unknown) {
   return String(value ?? '').trim();
 }
 
-function isValidBraceletCode(value: string) {
-  return (
-    value.length === BRACELET_CODE_LENGTH &&
-    /^[A-Z0-9]+$/.test(value) &&
-    /[A-Z]/.test(value) &&
-    /\d/.test(value)
-  );
-}
-
 function extractCode(value: unknown) {
   const text = cellToString(value).toUpperCase();
   if (!text) return '';
 
-  const locMatch = text.match(/LOCPULSEIRA\s+([A-Z0-9]+)/);
-  if (locMatch?.[1] && isValidBraceletCode(locMatch[1])) {
-    return locMatch[1];
-  }
+  const locMatch = text.match(/LOCPULSEIRA\s+([A-Z0-9]{5,})/);
+  if (locMatch?.[1]) return locMatch[1];
 
-  const matches = text.match(/[A-Z0-9]+/g) ?? [];
-  const validMatches = matches
+  const matches = text.match(/[A-Z0-9]{5,}/g) ?? [];
+  const cleaned = matches
     .map((item) => item.replace(/[^A-Z0-9]/g, ''))
-    .filter((item) => isValidBraceletCode(item));
+    .filter((item) => item.length >= 5 && item !== 'LOCPULSEIRA' && item !== 'KEYBOARD');
 
-  return validMatches[0] ?? '';
+  if (cleaned.length === 0) return '';
+  return cleaned.sort((a, b) => b.length - a.length)[0];
 }
 
 function normalizeName(value: unknown) {
@@ -94,7 +80,7 @@ function normalizeName(value: unknown) {
 }
 
 function isLikelyCode(value: unknown) {
-  return isValidBraceletCode(extractCode(value));
+  return extractCode(value).length >= 5;
 }
 
 function isLikelyName(value: unknown) {
@@ -175,7 +161,7 @@ function inferPulseiraColumnIndex(data: unknown[][], startRow: number, maxCols: 
   for (let columnIndex = 0; columnIndex < maxCols; columnIndex += 1) {
     let score = 0;
 
-    for (let rowIndex = startRow; rowIndex < Math.min(data.length, startRow + 100); rowIndex += 1) {
+    for (let rowIndex = startRow; rowIndex < Math.min(data.length, startRow + 80); rowIndex += 1) {
       const value = data[rowIndex]?.[columnIndex];
       if (isLikelyCode(value)) score += 1;
     }
@@ -198,12 +184,12 @@ function inferNameColumnIndex(data: unknown[][], startRow: number, maxCols: numb
 
     let score = 0;
 
-    for (let rowIndex = startRow; rowIndex < Math.min(data.length, startRow + 100); rowIndex += 1) {
+    for (let rowIndex = startRow; rowIndex < Math.min(data.length, startRow + 80); rowIndex += 1) {
       const value = data[rowIndex]?.[columnIndex];
       if (isLikelyName(value)) score += 1;
     }
 
-    if (pulseiraColumnIndex !== null && Math.abs(columnIndex - pulseiraColumnIndex) <= 3) {
+    if (pulseiraColumnIndex !== null && Math.abs(columnIndex - pulseiraColumnIndex) <= 2) {
       score += 2;
     }
 
@@ -218,22 +204,6 @@ function inferNameColumnIndex(data: unknown[][], startRow: number, maxCols: numb
 
 function makeDisplayHeaders(rawHeaders: string[], maxCols: number) {
   return Array.from({ length: maxCols }, (_, index) => rawHeaders[index] || `__EMPTY_${index}`);
-}
-
-function hasValidCodeInColumn(data: unknown[][], startRow: number, columnIndex: number) {
-  for (let rowIndex = startRow; rowIndex < Math.min(data.length, startRow + 150); rowIndex += 1) {
-    if (isLikelyCode(data[rowIndex]?.[columnIndex])) return true;
-  }
-
-  return false;
-}
-
-function hasSomeNameInColumn(data: unknown[][], startRow: number, columnIndex: number) {
-  for (let rowIndex = startRow; rowIndex < Math.min(data.length, startRow + 150); rowIndex += 1) {
-    if (isLikelyName(data[rowIndex]?.[columnIndex])) return true;
-  }
-
-  return false;
 }
 
 export async function parseXlsxPulseiras(file: File): Promise<XlsxImportResult> {
@@ -258,30 +228,20 @@ export async function parseXlsxPulseiras(file: File): Promise<XlsxImportResult> 
 
     const dataStartRow = detectedHeaders.length > 0 ? headerRowIndex + 1 : 0;
 
-    if (
-      maxCols > FORCED_PULSEIRA_COLUMN_INDEX &&
-      hasValidCodeInColumn(rawData, dataStartRow, FORCED_PULSEIRA_COLUMN_INDEX)
-    ) {
-      pulseiraColumnIndex = FORCED_PULSEIRA_COLUMN_INDEX;
-    } else if (pulseiraColumnIndex === null) {
+    if (pulseiraColumnIndex === null) {
       pulseiraColumnIndex = inferPulseiraColumnIndex(rawData, dataStartRow, maxCols);
     }
 
-    if (
-      maxCols > FORCED_NAME_COLUMN_INDEX &&
-      hasSomeNameInColumn(rawData, dataStartRow, FORCED_NAME_COLUMN_INDEX)
-    ) {
-      nomeColumnIndex = FORCED_NAME_COLUMN_INDEX;
-    } else if (nomeColumnIndex === null) {
+    if (nomeColumnIndex === null) {
       nomeColumnIndex = inferNameColumnIndex(rawData, dataStartRow, maxCols, pulseiraColumnIndex);
     }
 
     if (!pulseiraColumn && pulseiraColumnIndex !== null) {
-      pulseiraColumn = displayHeaders[pulseiraColumnIndex] ?? `empty_${pulseiraColumnIndex}`;
+      pulseiraColumn = displayHeaders[pulseiraColumnIndex] ?? `__EMPTY_${pulseiraColumnIndex}`;
     }
 
     if (!nomeColumn && nomeColumnIndex !== null) {
-      nomeColumn = displayHeaders[nomeColumnIndex] ?? `empty_${nomeColumnIndex}`;
+      nomeColumn = displayHeaders[nomeColumnIndex] ?? `__EMPTY_${nomeColumnIndex}`;
     }
 
     if (pulseiraColumnIndex === null) continue;

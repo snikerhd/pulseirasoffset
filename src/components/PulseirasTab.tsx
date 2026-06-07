@@ -16,18 +16,7 @@ interface PulseirasTabProps {
   addLog: (log: Omit<LogEntry, 'id' | 'timestamp'>) => void;
 }
 
-const CORES = [
-  { label: 'Azul', value: 'blue', class: 'bg-blue-500' },
-  { label: 'Verde', value: 'green', class: 'bg-green-500' },
-  { label: 'Vermelho', value: 'red', class: 'bg-red-500' },
-  { label: 'Amarelo', value: 'yellow', class: 'bg-yellow-500' },
-  { label: 'Roxo', value: 'purple', class: 'bg-purple-500' },
-  { label: 'Rosa', value: 'pink', class: 'bg-pink-500' },
-  { label: 'Laranja', value: 'orange', class: 'bg-orange-500' },
-  { label: 'Cinza', value: 'gray', class: 'bg-gray-400' },
-];
-
-const AUTO_IMPORT_COLORS = ['blue', 'green', 'purple', 'orange', 'pink', 'gray'];
+const AUTO_IMPORT_COLORS = ['blue'];
 
 const corClass: Record<string, string> = {
   blue: 'border-blue-500 text-blue-400 bg-blue-900/20',
@@ -60,7 +49,7 @@ export default function PulseirasTab({
 }: PulseirasTabProps) {
   const [codigo, setCodigo] = useState('');
   const [descricao, setDescricao] = useState('');
-  const [cor, setCor] = useState('blue');
+  
   const [busca, setBusca] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -96,7 +85,7 @@ export default function PulseirasTab({
       id: crypto.randomUUID(),
       codigo: codigoFinal,
       descricao: descricao.trim() || codigoFinal,
-      cor,
+      cor: 'blue',
       createdAt: new Date().toISOString(),
     };
 
@@ -109,7 +98,6 @@ export default function PulseirasTab({
 
     setCodigo('');
     setDescricao('');
-    setCor('blue');
     setShowForm(false);
   };
 
@@ -647,24 +635,9 @@ export default function PulseirasTab({
                   />
                 </div>
               </div>
-              <div>
-                <label className="text-gray-400 text-xs mb-2 block">Cor</label>
-                <div className="flex flex-wrap gap-2">
-                  {CORES.map((c) => (
-                    <button
-                      key={c.value}
-                      onClick={() => setCor(c.value)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                        cor === c.value
-                          ? 'border-white text-white bg-gray-600'
-                          : 'border-gray-600 text-gray-400 hover:border-gray-400'
-                      }`}
-                    >
-                      <span className={`w-3 h-3 rounded-full ${c.class}`}></span>
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
+              <div className="rounded-lg border border-blue-900 bg-blue-950/30 px-3 py-2">
+                <p className="text-blue-300 text-xs font-medium">Cor fixa ativa</p>
+                <p className="text-gray-400 text-xs mt-1">Todas as pulseiras são guardadas automaticamente a azul claro.</p>
               </div>
               <div className="flex gap-2 pt-1">
                 <button
@@ -831,7 +804,7 @@ export default function PulseirasTab({
                     key={p.id}
                     className={`border rounded-xl px-4 py-3 transition-all hover:border-gray-500 ${
                       deleteMode ? 'ring-1 ring-red-900/40' : ''
-                    } ${corClass[p.cor] || corClass.blue}`}
+                    } ${corClass.blue}`}
                   >
                     <div className="flex flex-col lg:flex-row lg:items-center gap-3">
                       <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -847,7 +820,7 @@ export default function PulseirasTab({
                           ✓
                         </button>
 
-                        <span className={`w-3 h-3 rounded-full flex-shrink-0 ${corBadge[p.cor] || corBadge.blue}`}></span>
+                        <span className={`w-3 h-3 rounded-full flex-shrink-0 ${corBadge.blue}`}></span>
 
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 min-w-0">
