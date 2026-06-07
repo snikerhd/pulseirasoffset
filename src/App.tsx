@@ -1,18 +1,19 @@
 import { useState, useCallback } from 'react';
-import { Pulseira, LogEntry, BindEntry, ProfileEntry, Tab } from './types';
+import { Pulseira, LogEntry, BindEntry, Perfil, Tab } from './types';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import Header from './components/Header';
 import PulseirasTab from './components/PulseirasTab';
 import LogsTab from './components/LogsTab';
 import BindsTab from './components/BindsTab';
 import GeradorTab from './components/GeradorTab';
+import PerfisTab from './components/PerfisTab';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('pulseiras');
   const [pulseiras, setPulseiras] = useLocalStorage<Pulseira[]>('fivem_pulseiras', []);
   const [logs, setLogs] = useLocalStorage<LogEntry[]>('fivem_logs', []);
   const [binds, setBinds] = useLocalStorage<BindEntry[]>('fivem_binds', []);
-  const [profiles, setProfiles] = useLocalStorage<ProfileEntry[]>('fivem_profiles', []);
+  const [perfis, setPerfis] = useLocalStorage<Perfil[]>('fivem_perfis', []);
 
   const addLog = useCallback(
     (log: Omit<LogEntry, 'id' | 'timestamp'>) => {
@@ -33,7 +34,7 @@ export default function App() {
         setActiveTab={setActiveTab}
         totalPulseiras={pulseiras.length}
         totalBinds={binds.length}
-        totalProfiles={profiles.length}
+        totalPerfis={perfis.length}
       />
 
       <main className="max-w-7xl mx-auto px-4 py-6">
@@ -41,8 +42,6 @@ export default function App() {
           <PulseirasTab
             pulseiras={pulseiras}
             setPulseiras={setPulseiras}
-            profiles={profiles}
-            setProfiles={setProfiles}
             addLog={addLog}
           />
         )}
@@ -63,6 +62,15 @@ export default function App() {
         {activeTab === 'gerador' && (
           <GeradorTab
             pulseiras={pulseiras}
+            addLog={addLog}
+          />
+        )}
+        {activeTab === 'perfis' && (
+          <PerfisTab
+            perfis={perfis}
+            setPerfis={setPerfis}
+            pulseiras={pulseiras}
+            setPulseiras={setPulseiras}
             addLog={addLog}
           />
         )}

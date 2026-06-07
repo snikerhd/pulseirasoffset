@@ -1,17 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
-import { LogEntry, ProfileEntry, Pulseira } from '../types';
-import {
-  buildLocPulseiraCommands,
-  chunkCodes,
-  MAX_PULSEIRAS_PER_COMMAND,
-  parsePulseiraCodes,
-} from '../utils/pulseiras';
+import { useState } from 'react';
+import { Pulseira, LogEntry } from '../types';
+import ExcelImport from './ExcelImport';
+
 
 interface PulseirasTabProps {
   pulseiras: Pulseira[];
   setPulseiras: (p: Pulseira[] | ((prev: Pulseira[]) => Pulseira[])) => void;
-  profiles: ProfileEntry[];
-  setProfiles: (p: ProfileEntry[] | ((prev: ProfileEntry[]) => ProfileEntry[])) => void;
   addLog: (log: Omit<LogEntry, 'id' | 'timestamp'>) => void;
 }
 
@@ -25,8 +19,6 @@ const CORES = [
   { label: 'Laranja', value: 'orange', class: 'bg-orange-500' },
   { label: 'Cinza', value: 'gray', class: 'bg-gray-400' },
 ];
-
-const AUTO_IMPORT_COLORS = ['blue', 'green', 'purple', 'orange', 'pink', 'gray'];
 
 const corClass: Record<string, string> = {
   blue: 'border-blue-500 text-blue-400 bg-blue-900/20',
@@ -50,32 +42,38 @@ const corBadge: Record<string, string> = {
   gray: 'bg-gray-400',
 };
 
-export default function PulseirasTab({
-  pulseiras,
-  setPulseiras,
-  profiles,
-  setProfiles,
-  addLog,
-}: PulseirasTabProps) {
+const PER_PAGINA = 18;
+
+export default function PulseirasTab({ pulseiras, setPulseiras, addLog }: PulseirasTabProps) {
   const [codigo, setCodigo] = useState('');
   const [descricao, setDescricao] = useState('');
   const [cor, setCor] = useState('blue');
   const [busca, setBusca] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [selectedCodes, setSelectedCodes] = useState<string[]>([]);
-  const [importText, setImportText] = useState('');
-  const [importProfileName, setImportProfileName] = useState('');
-  const [showImport, setShowImport] = useState(false);
-  const [statusMessage, setStatusMessage] = useState('');
-  const [copyPage, setCopyPage] = useState(0);
-  const [profilePages, setProfilePages] = useState<Record<string, number>>({});
+  const [showBulkImport, setShowBulkImport] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+  const [bulkColor, setBulkColor] = useState('blue');
+  const [showExcelImport, setShowExcelImport] = useState(false);
 
-  const parsedImportCodes = useMemo(() => parsePulseiraCodes(importText), [importText]);
+  // Paginação
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const [paginasSelecionadas, setPaginasSelecionadas] = useState<Set<number>>(new Set());
 
-  const showMessage = (message: string) => {
-    setStatusMessage(message);
-    window.setTimeout(() => setStatusMessage(''), 2800);
+  const filtered = pulseiras.filter(
+    (p) =>
+      p.codigo.toLowerCase().includes(busca.toLowerCase()) ||
+      p.descricao.toLowerCase().includes(busca.toLowerCase())
+  );
+
+  const totalPaginas = Math.max(1, Math.ceil(filtered.length / PER_PAGINA));
+  const inicio = (paginaAtual - 1) * PER_PAGINA;
+  const pulseirasPagina = filtered.slice(inicio, inicio + PER_PAGINA);
+
+  const handleBusca = (v: string) => {
+    setBusca(v);
+    setPaginaAtual(1);
+    setPaginasSelecionadas(new Set());
   };
 
   const handleAdd = () => {
@@ -110,16 +108,7 @@ export default function PulseirasTab({
 
   const handleRemove = (pulseira: Pulseira) => {
     if (!confirm(`Remover pulseira ${pulseira.codigo}?`)) return;
-
     setPulseiras((prev) => prev.filter((p) => p.id !== pulseira.id));
-    setSelectedCodes((prev) => prev.filter((code) => code !== pulseira.codigo));
-    setProfiles((prev) =>
-      prev.map((profile) => ({
-        ...profile,
-        codigos: profile.codigos.filter((code) => code !== pulseira.codigo),
-      }))
-    );
-
     addLog({
       type: 'remove',
       message: `Pulseira removida: ${pulseira.codigo}`,
@@ -139,629 +128,492 @@ export default function PulseirasTab({
     });
   };
 
-  const toggleSelect = (codigoPulseira: string) => {
-    setSelectedCodes((prev) =>
-      prev.includes(codigoPulseira)
-        ? prev.filter((code) => code !== codigoPulseira)
-        : [...prev, codigoPulseira]
-    );
-  };
+  const handleBulkImport = () => {
+    const texto = bulkText.trim();
+    if (!texto) return;
 
-  const filtradas = pulseiras.filter(
-    (p) =>
-      p.codigo.toLowerCase().includes(busca.toLowerCase()) ||
-      p.descricao.toLowerCase().includes(busca.toLowerCase())
-  );
+    const codigosEncontrados: string[] = [];
 
-  const copySourceCodes = useMemo(() => {
-    if (selectedCodes.length > 0) return selectedCodes;
-    return filtradas.map((p) => p.codigo);
-  }, [filtradas, selectedCodes]);
+    const parts = texto.split(';').map((s) => s.trim()).filter(Boolean);
+    for (const part of parts) {
+      let codigo = part.replace(/^locpulseira\s+/i, '').trim().toUpperCase();
+      const match = codigo.match(/^([A-Z]{2,}\d{3,})/);
+      if (match) {
+        codigo = match[1];
+      }
+      if (codigo && !codigosEncontrados.includes(codigo)) {
+        codigosEncontrados.push(codigo);
+      }
+    }
 
-  const copyGroups = useMemo(() => chunkCodes(copySourceCodes, MAX_PULSEIRAS_PER_COMMAND), [copySourceCodes]);
-
-  useEffect(() => {
-    if (copyGroups.length === 0) {
-      setCopyPage(0);
+    if (codigosEncontrados.length === 0) {
+      alert('Nenhum código encontrado! Usa o formato: locpulseira PSS54950;locpulseira PFB75791');
       return;
     }
 
-    setCopyPage((prev) => Math.min(prev, copyGroups.length - 1));
-  }, [copyGroups.length]);
+    const existentes = new Set(pulseiras.map((p) => p.codigo));
+    const novas: Pulseira[] = [];
+    const duplicatas: string[] = [];
 
-  const currentCopyPageCodes = copyGroups[copyPage] ?? [];
-  const copySourceLabel =
-    selectedCodes.length > 0
-      ? `seleção manual (${selectedCodes.length})`
-      : busca.trim()
-        ? `resultados da pesquisa (${filtradas.length})`
-        : `todas as pulseiras (${pulseiras.length})`;
-
-  const handleCopyPage = (pageIndex: number) => {
-    const pageCodes = copyGroups[pageIndex] ?? [];
-    if (pageCodes.length === 0) return;
-
-    const command = buildLocPulseiraCommands(pageCodes, ';');
-    navigator.clipboard.writeText(command);
-    setCopyPage(pageIndex);
-
-    addLog({
-      type: 'copy',
-      message: `Página ${pageIndex + 1}/${copyGroups.length} copiada (${pageCodes.length} pulseiras)`,
-    });
-
-    showMessage(`Copiada a página ${pageIndex + 1} com ${pageCodes.length} pulseiras.`);
-  };
-
-  const handleSelectVisible = () => {
-    const visibleCodes = filtradas.map((p) => p.codigo);
-    setSelectedCodes((prev) => Array.from(new Set([...prev, ...visibleCodes])));
-    showMessage(`${visibleCodes.length} pulseiras visíveis adicionadas à seleção.`);
-  };
-
-  const handleUseProfile = (profile: ProfileEntry) => {
-    setSelectedCodes(Array.from(new Set(profile.codigos)));
-    setCopyPage(0);
-    showMessage(`Perfil "${profile.nome}" carregado com ${profile.codigos.length} pulseiras.`);
-  };
-
-  const handleDeleteProfile = (profile: ProfileEntry) => {
-    if (!confirm(`Apagar o perfil ${profile.nome}?`)) return;
-    setProfiles((prev) => prev.filter((item) => item.id !== profile.id));
-    addLog({ type: 'profile', message: `Perfil removido: ${profile.nome}` });
-  };
-
-  const handleSaveSelectionAsProfile = () => {
-    const sourceCodes = copySourceCodes;
-    if (sourceCodes.length === 0) {
-      alert('Não há pulseiras para guardar num perfil.');
-      return;
-    }
-
-    const nome = window.prompt('Nome do perfil:', `Perfil ${new Date().toLocaleDateString('pt-PT')}`)?.trim();
-    if (!nome) return;
-
-    const novoPerfil: ProfileEntry = {
-      id: crypto.randomUUID(),
-      nome,
-      codigos: Array.from(new Set(sourceCodes)),
-      createdAt: new Date().toISOString(),
-      source: selectedCodes.length > 0 ? 'manual' : 'import',
-    };
-
-    setProfiles((prev) => [novoPerfil, ...prev]);
-    addLog({ type: 'profile', message: `Perfil guardado: ${nome} (${novoPerfil.codigos.length} pulseiras)` });
-    showMessage(`Perfil "${nome}" guardado com ${novoPerfil.codigos.length} pulseiras.`);
-  };
-
-  const handleImportProfile = () => {
-    if (parsedImportCodes.length === 0) {
-      alert('Não encontrei pulseiras válidas no texto colado.');
-      return;
-    }
-
-    const nomePerfil = importProfileName.trim() || `Perfil Partilhado ${new Date().toLocaleDateString('pt-PT')}`;
-    const existingCodes = new Set(pulseiras.map((p) => p.codigo));
-    const newCodes = parsedImportCodes.filter((code) => !existingCodes.has(code));
-
-    if (newCodes.length > 0) {
-      const novasPulseiras: Pulseira[] = newCodes.map((code, index) => ({
+    for (const codigo of codigosEncontrados) {
+      if (existentes.has(codigo)) {
+        duplicatas.push(codigo);
+        continue;
+      }
+      existentes.add(codigo);
+      novas.push({
         id: crypto.randomUUID(),
-        codigo: code,
-        descricao: code,
-        cor: AUTO_IMPORT_COLORS[index % AUTO_IMPORT_COLORS.length],
+        codigo,
+        descricao: codigo,
+        cor: bulkColor,
         createdAt: new Date().toISOString(),
-      }));
-
-      setPulseiras((prev) => [...prev, ...novasPulseiras]);
+      });
     }
 
-    const novoPerfil: ProfileEntry = {
-      id: crypto.randomUUID(),
-      nome: nomePerfil,
-      codigos: parsedImportCodes,
-      createdAt: new Date().toISOString(),
-      source: 'import',
-    };
-
-    setProfiles((prev) => [novoPerfil, ...prev]);
-    setSelectedCodes(parsedImportCodes);
-    setCopyPage(0);
-
+    setPulseiras((prev) => [...prev, ...novas]);
     addLog({
-      type: 'profile',
-      message: `Perfil importado: ${nomePerfil} (${parsedImportCodes.length} pulseiras, ${newCodes.length} novas)`,
+      type: 'add',
+      message: `Importados ${novas.length} códigos${duplicatas.length > 0 ? ` (${duplicatas.length} duplicatas ignoradas)` : ''}`,
     });
 
-    setImportText('');
-    setImportProfileName('');
-    setShowImport(false);
-
-    showMessage(
-      `Perfil criado com ${parsedImportCodes.length} pulseiras e dividido em ${Math.max(
-        1,
-        Math.ceil(parsedImportCodes.length / MAX_PULSEIRAS_PER_COMMAND)
-      )} páginas.`
-    );
+    setBulkText('');
+    setShowBulkImport(false);
   };
 
-  const handleProfilePageChange = (profileId: string, nextPage: number, totalPages: number) => {
-    setProfilePages((prev) => ({
-      ...prev,
-      [profileId]: Math.min(Math.max(nextPage, 0), Math.max(totalPages - 1, 0)),
-    }));
-  };
-
-  const handleCopyProfilePage = (profile: ProfileEntry, pageIndex: number) => {
-    const pages = chunkCodes(profile.codigos, MAX_PULSEIRAS_PER_COMMAND);
-    const pageCodes = pages[pageIndex] ?? [];
-    if (pageCodes.length === 0) return;
-
-    navigator.clipboard.writeText(buildLocPulseiraCommands(pageCodes, ';'));
-    setProfilePages((prev) => ({ ...prev, [profile.id]: pageIndex }));
-
+  const copiarPagina = (numPagina: number) => {
+    const start = (numPagina - 1) * PER_PAGINA;
+    const lista = filtered.slice(start, start + PER_PAGINA);
+    const cmds = lista.map((p) => `locpulseira ${p.codigo}`).join(';');
+    navigator.clipboard.writeText(cmds);
     addLog({
       type: 'copy',
-      message: `Perfil ${profile.nome}: página ${pageIndex + 1}/${pages.length} copiada (${pageCodes.length})`,
+      message: `Página ${numPagina} copiada (${lista.length} pulseiras)`,
     });
+  };
 
-    showMessage(`Perfil "${profile.nome}" — copiada a página ${pageIndex + 1} com ${pageCodes.length} pulseiras.`);
+  const copiarPaginasSelecionadas = () => {
+    if (paginasSelecionadas.size === 0) return;
+
+    const todosCodigos: string[] = [];
+    const paginasArray = Array.from(paginasSelecionadas).sort((a, b) => a - b);
+
+    for (const pg of paginasArray) {
+      const start = (pg - 1) * PER_PAGINA;
+      const lista = filtered.slice(start, start + PER_PAGINA);
+      for (const p of lista) {
+        if (!todosCodigos.includes(p.codigo)) {
+          todosCodigos.push(p.codigo);
+        }
+      }
+    }
+
+    const cmds = todosCodigos.map((c) => `locpulseira ${c}`).join(';');
+    navigator.clipboard.writeText(cmds);
+    addLog({
+      type: 'copy',
+      message: `${paginasSelecionadas.size} página(s) copiada(s) — ${todosCodigos.length} pulseiras`,
+    });
+    setPaginasSelecionadas(new Set());
+  };
+
+  const togglePaginaSelecionada = (numPagina: number) => {
+    setPaginasSelecionadas((prev) => {
+      const next = new Set(prev);
+      if (next.has(numPagina)) {
+        next.delete(numPagina);
+      } else {
+        next.add(numPagina);
+      }
+      return next;
+    });
+  };
+
+  const selecionarTodas = () => {
+    const todas = new Set<number>();
+    for (let i = 1; i <= totalPaginas; i++) todas.add(i);
+    setPaginasSelecionadas(todas);
+  };
+
+  const limparSelecao = () => {
+    setPaginasSelecionadas(new Set());
   };
 
   return (
     <div className="space-y-4">
-      <div className="bg-amber-900/20 border border-amber-800 rounded-xl p-4">
-        <p className="text-amber-300 text-sm font-medium mb-1">📚 Grupos automáticos de 18</p>
-        <p className="text-gray-400 text-xs">
-          Agora as pulseiras ficam organizadas por <strong className="text-white">páginas de {MAX_PULSEIRAS_PER_COMMAND}</strong>.
-          Se tiveres 20 pulseiras, a página 1 copia 18 e a página 2 copia as 2 restantes.
-        </p>
+      {/* Barra de pesquisa e acções */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex-1 relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+          <input
+            type="text"
+            placeholder="Pesquisar pulseira..."
+            value={busca}
+            onChange={(e) => handleBusca(e.target.value)}
+            className="w-full bg-gray-800 border border-gray-600 rounded-lg pl-9 pr-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm"
+          />
+        </div>
+        <button
+          onClick={() => setShowBulkImport(!showBulkImport)}
+          className="flex items-center gap-2 bg-green-700 hover:bg-green-600 text-white px-4 py-2.5 rounded-lg font-medium text-sm transition-colors"
+        >
+          <span>📥</span> Importar em Bulk
+        </button>
+        <button
+          onClick={() => setShowExcelImport(!showExcelImport)}
+          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-lg font-medium text-sm transition-colors"
+        >
+          <span>📊</span> Importar Excel
+        </button>
+        {showExcelImport && (
+          <ExcelImport
+            pulseiras={pulseiras}
+            setPulseiras={setPulseiras}
+            addLog={addLog}
+            onClose={() => setShowExcelImport(false)}
+          />
+        )}
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg font-medium text-sm transition-colors"
+        >
+          <span>➕</span> Nova Pulseira
+        </button>
       </div>
 
-      <div className="flex flex-col xl:flex-row gap-4">
-        <div className="flex-1 space-y-4">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="flex-1 relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
-              <input
-                type="text"
-                placeholder="Pesquisar pulseira..."
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-600 rounded-lg pl-9 pr-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm"
-              />
-            </div>
-            <button
-              onClick={() => setShowForm(!showForm)}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg font-medium text-sm transition-colors"
-            >
-              <span>➕</span> Nova Pulseira
-            </button>
-            <button
-              onClick={() => setShowImport(!showImport)}
-              className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2.5 rounded-lg font-medium text-sm transition-colors"
-            >
-              <span>📥</span> Importar Perfil
-            </button>
-          </div>
-
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-              <div>
-                <p className="text-white font-semibold text-sm">Grupos de cópia</p>
-                <p className="text-gray-500 text-xs">
-                  Fonte atual: <strong className="text-white">{copySourceLabel}</strong>
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={handleSelectVisible}
-                  disabled={filtradas.length === 0}
-                  className="bg-gray-700 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
-                >
-                  Selecionar visíveis
-                </button>
-                <button
-                  onClick={() => setSelectedCodes([])}
-                  disabled={selectedCodes.length === 0}
-                  className="bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-gray-300 px-3 py-2 rounded-lg text-xs font-medium transition-colors border border-gray-700"
-                >
-                  Limpar seleção
-                </button>
-                <button
-                  onClick={() => handleCopyPage(copyPage)}
-                  disabled={currentCopyPageCodes.length === 0}
-                  className="bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-xs font-medium transition-colors"
-                >
-                  📋 Copiar página {copyGroups.length > 0 ? copyPage + 1 : 0}
-                </button>
-                <button
-                  onClick={handleSaveSelectionAsProfile}
-                  disabled={copySourceCodes.length === 0}
-                  className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-xs font-medium transition-colors"
-                >
-                  💾 Guardar Perfil
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-start">
-              <div className="space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  {copyGroups.length === 0 ? (
-                    <span className="text-xs text-gray-500">Sem pulseiras para dividir em páginas.</span>
-                  ) : (
-                    copyGroups.map((group, index) => (
-                      <button
-                        key={`copy-page-${index}`}
-                        onClick={() => setCopyPage(index)}
-                        className={`rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
-                          copyPage === index
-                            ? 'border-purple-500 bg-purple-600 text-white'
-                            : 'border-gray-700 bg-gray-800 text-gray-300 hover:border-gray-500'
-                        }`}
-                      >
-                        Página {index + 1} · {group.length}
-                      </button>
-                    ))
-                  )}
-                </div>
-
-                {currentCopyPageCodes.length > 0 && (
-                  <div className="rounded-lg border border-gray-700 bg-gray-950 p-3 space-y-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs text-gray-500">
-                        Página {copyPage + 1} de {copyGroups.length} · {currentCopyPageCodes.length} pulseiras
-                      </p>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setCopyPage((prev) => Math.max(prev - 1, 0))}
-                          disabled={copyPage === 0}
-                          className="px-2.5 py-1 rounded-md bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-gray-300"
-                        >
-                          ←
-                        </button>
-                        <button
-                          onClick={() => setCopyPage((prev) => Math.min(prev + 1, copyGroups.length - 1))}
-                          disabled={copyPage >= copyGroups.length - 1}
-                          className="px-2.5 py-1 rounded-md bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-gray-300"
-                        >
-                          →
-                        </button>
-                      </div>
-                    </div>
-                    <code className="block text-green-400 text-xs font-mono whitespace-pre-wrap break-all max-h-28 overflow-y-auto">
-                      {buildLocPulseiraCommands(currentCopyPageCodes, ';')}
-                    </code>
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-xl border border-gray-800 bg-gray-950 px-4 py-3 min-w-[170px]">
-                <p className="text-gray-500 text-xs">Resumo</p>
-                <p className="text-white text-lg font-bold mt-1">{copySourceCodes.length}</p>
-                <p className="text-gray-500 text-xs">pulseiras nesta fonte</p>
-                <p className="text-purple-400 text-sm font-semibold mt-3">{copyGroups.length}</p>
-                <p className="text-gray-500 text-xs">páginas de cópia</p>
-              </div>
-            </div>
-
-            {statusMessage && (
-              <div className="rounded-lg border border-blue-800 bg-blue-900/20 px-3 py-2 text-xs text-blue-300">
-                {statusMessage}
-              </div>
+      {/* Barra de ações de página */}
+      {filtered.length > 0 && (
+        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center justify-between bg-gray-800 border border-gray-700 rounded-xl p-3">
+          <div className="text-gray-400 text-xs">
+            📄 Página <strong className="text-white">{paginaAtual}</strong> de <strong className="text-white">{totalPaginas}</strong> —{' '}
+            <strong className="text-white">{filtered.length}</strong> pulseira{filtered.length !== 1 ? 's' : ''} no total
+            {totalPaginas > 1 && (
+              <span className="ml-1 text-yellow-500">
+                ({PER_PAGINA} por página)
+              </span>
             )}
           </div>
-
-          {showForm && (
-            <div className="bg-gray-800 border border-gray-600 rounded-xl p-5 space-y-4">
-              <h3 className="text-white font-semibold text-sm">Nova Pulseira</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-gray-400 text-xs mb-1 block">Código *</label>
-                  <input
-                    type="text"
-                    placeholder="ex: PSS54950"
-                    value={codigo}
-                    onChange={(e) => setCodigo(e.target.value.toUpperCase())}
-                    onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-gray-400 text-xs mb-1 block">Descrição (opcional)</label>
-                  <input
-                    type="text"
-                    placeholder="ex: Jogador Principal"
-                    value={descricao}
-                    onChange={(e) => setDescricao(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="text-gray-400 text-xs mb-2 block">Cor</label>
-                <div className="flex flex-wrap gap-2">
-                  {CORES.map((c) => (
-                    <button
-                      key={c.value}
-                      onClick={() => setCor(c.value)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                        cor === c.value
-                          ? 'border-white text-white bg-gray-600'
-                          : 'border-gray-600 text-gray-400 hover:border-gray-400'
-                      }`}
-                    >
-                      <span className={`w-3 h-3 rounded-full ${c.class}`}></span>
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="flex gap-2 pt-1">
-                <button
-                  onClick={handleAdd}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Adicionar
-                </button>
-                <button
-                  onClick={() => setShowForm(false)}
-                  className="bg-gray-700 hover:bg-gray-600 text-gray-300 px-5 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          )}
-
-          {showImport && (
-            <div className="bg-gray-800 border border-amber-700 rounded-xl p-5 space-y-4">
-              <div>
-                <h3 className="text-white font-semibold text-sm">Importar perfil partilhado</h3>
-                <p className="text-gray-500 text-xs mt-1">
-                  Cola comandos como <span className="font-mono text-green-400">locpulseira HYE28866;locpulseira PFB75791</span>
-                  {' '}e o sistema cria automaticamente as pulseiras em falta, o perfil e as páginas de cópia.
-                </p>
-              </div>
-
-              <div>
-                <label className="text-gray-400 text-xs mb-1 block">Nome do perfil (opcional)</label>
-                <input
-                  type="text"
-                  value={importProfileName}
-                  onChange={(e) => setImportProfileName(e.target.value)}
-                  placeholder="ex: Perfil Staff Noite"
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-amber-500 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="text-gray-400 text-xs mb-1 block">Texto colado *</label>
-                <textarea
-                  value={importText}
-                  onChange={(e) => setImportText(e.target.value)}
-                  rows={6}
-                  placeholder={'locpulseira HYE28866;locpulseira PFB75791;locpulseira EIE58685'}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-amber-500 text-sm font-mono resize-none"
-                />
-              </div>
-
-              <div className="rounded-lg border border-gray-700 bg-gray-900/70 p-3">
-                <p className="text-gray-500 text-xs mb-1">Detetadas</p>
-                <p className="text-sm text-white">
-                  {parsedImportCodes.length > 0 ? `${parsedImportCodes.length} pulseiras encontradas` : 'Nenhuma pulseira detetada ainda'}
-                </p>
-                {parsedImportCodes.length > 0 && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    Isto vai criar {Math.max(1, Math.ceil(parsedImportCodes.length / MAX_PULSEIRAS_PER_COMMAND))} páginas de cópia.
-                  </p>
-                )}
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={handleImportProfile}
-                  disabled={parsedImportCodes.length === 0}
-                  className="bg-amber-600 hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Criar perfil e pulseiras
-                </button>
-                <button
-                  onClick={() => setShowImport(false)}
-                  className="bg-gray-700 hover:bg-gray-600 text-gray-300 px-5 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Fechar
-                </button>
-              </div>
-            </div>
-          )}
-
-          {filtradas.length === 0 ? (
-            <div className="text-center py-16 text-gray-500">
-              <div className="text-5xl mb-3">⌚</div>
-              <p className="text-lg font-medium text-gray-400">
-                {busca ? 'Nenhuma pulseira encontrada' : 'Nenhuma pulseira adicionada'}
-              </p>
-              <p className="text-sm mt-1">
-                {busca ? 'Tenta outro código ou descrição' : 'Clica em "Nova Pulseira" para começar'}
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filtradas.map((p) => {
-                const isSelected = selectedCodes.includes(p.codigo);
-
-                return (
-                  <div
-                    key={p.id}
-                    className={`border rounded-xl p-4 transition-all hover:scale-[1.01] ${corClass[p.cor] || corClass.blue}`}
-                  >
-                    <div className="flex items-start justify-between mb-2 gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <button
-                          onClick={() => toggleSelect(p.codigo)}
-                          className={`w-5 h-5 rounded-md border flex items-center justify-center text-[10px] transition-all flex-shrink-0 ${
-                            isSelected
-                              ? 'border-emerald-400 bg-emerald-500 text-white'
-                              : 'border-gray-500 hover:border-white text-transparent'
-                          }`}
-                          title={isSelected ? 'Remover da seleção' : 'Selecionar para grupos de cópia'}
-                        >
-                          ✓
-                        </button>
-                        <span className={`w-3 h-3 rounded-full flex-shrink-0 ${corBadge[p.cor] || corBadge.blue}`}></span>
-                        <span className="font-mono font-bold text-white text-sm truncate">{p.codigo}</span>
-                      </div>
-                      <button
-                        onClick={() => handleRemove(p)}
-                        className="text-gray-500 hover:text-red-400 transition-colors text-xs"
-                        title="Remover"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                    {p.descricao !== p.codigo && <p className="text-gray-400 text-xs mb-3 ml-7">{p.descricao}</p>}
-                    <div className="ml-7">
-                      <div className="bg-gray-900/60 rounded-lg px-3 py-2 font-mono text-xs text-gray-300 mb-2 border border-gray-700">
-                        locpulseira {p.codigo}
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          onClick={() => handleLocate(p)}
-                          className={`py-1.5 rounded-lg text-xs font-medium transition-all ${
-                            copied === p.id ? 'bg-green-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-                          }`}
-                        >
-                          {copied === p.id ? '✅ Copiado!' : '📋 Copiar'}
-                        </button>
-                        <button
-                          onClick={() => toggleSelect(p.codigo)}
-                          className={`py-1.5 rounded-lg text-xs font-medium transition-all ${
-                            isSelected
-                              ? 'bg-emerald-600 text-white'
-                              : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600'
-                          }`}
-                        >
-                          {isSelected ? 'Selecionada' : 'Selecionar'}
-                        </button>
-                      </div>
-                    </div>
-                    <p className="text-gray-600 text-xs mt-2 ml-7">
-                      {new Date(p.createdAt).toLocaleDateString('pt-PT')}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => copiarPagina(paginaAtual)}
+              className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            >
+              📋 Copiar Página {paginaAtual}
+            </button>
+            {paginasSelecionadas.size > 0 && (
+              <button
+                onClick={copiarPaginasSelecionadas}
+                className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+              >
+                ✅ Copiar {paginasSelecionadas.size} Página(s)
+              </button>
+            )}
+            {totalPaginas > 1 && paginasSelecionadas.size < totalPaginas && (
+              <button
+                onClick={selecionarTodas}
+                className="flex items-center gap-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+              >
+                ☑️ Selecionar Todas
+              </button>
+            )}
+            {paginasSelecionadas.size > 0 && (
+              <button
+                onClick={limparSelecao}
+                className="flex items-center gap-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+              >
+                ✕ Limpar
+              </button>
+            )}
+          </div>
         </div>
+      )}
 
-        <aside className="xl:w-[370px] space-y-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-white font-semibold text-sm">👥 Perfis Partilhados</h3>
-              <span className="text-xs text-gray-500">{profiles.length}</span>
+      {/* Navegação de páginas */}
+      {totalPaginas > 1 && (
+        <div className="flex items-center justify-center gap-1 flex-wrap bg-gray-800 border border-gray-700 rounded-xl p-3">
+          <button
+            onClick={() => { setPaginaAtual((p) => Math.max(1, p - 1)); setPaginasSelecionadas(new Set()); }}
+            disabled={paginaAtual === 1}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-700 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors"
+          >
+            ◀ Anterior
+          </button>
+
+          {(() => {
+            const delta = 2;
+            const range = [];
+            for (let i = Math.max(2, paginaAtual - delta); i <= Math.min(totalPaginas - 1, paginaAtual + delta); i++) {
+              range.push(i);
+            }
+            if (paginaAtual - delta > 2) range.unshift('...');
+            range.unshift(1);
+            if (paginaAtual + delta < totalPaginas - 1) range.push('...');
+            if (totalPaginas > 1) range.push(totalPaginas);
+
+            return range.map((pg, idx) => {
+              if (pg === '...') {
+                return <span key={`dots-${idx}`} className="text-gray-500 px-1 text-xs">…</span>;
+              }
+              const numPg = pg as number;
+              const selecionada = paginasSelecionadas.has(numPg);
+              return (
+                <button
+                  key={numPg}
+                  onClick={() => { setPaginaAtual(numPg); setPaginasSelecionadas(new Set()); }}
+                  onContextMenu={(e) => { e.preventDefault(); togglePaginaSelecionada(numPg); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all min-w-9 ${
+                    numPg === paginaAtual
+                      ? 'bg-blue-600 text-white border-blue-500 shadow-lg'
+                      : selecionada
+                      ? 'bg-green-900/40 text-green-300 border-green-600'
+                      : 'bg-gray-700 text-gray-300 border-gray-600 hover:border-gray-400'
+                  }`}
+                  title={
+                    selecionada
+                      ? `Página ${numPg} selecionada (clicar direito para desselecionar)`
+                      : `Página ${numPg} (clicar direito para selecionar multi-cópia)`
+                  }
+                >
+                  {numPg}
+                </button>
+              );
+            });
+          })()}
+
+          <button
+            onClick={() => { setPaginaAtual((p) => Math.min(totalPaginas, p + 1)); setPaginasSelecionadas(new Set()); }}
+            disabled={paginaAtual === totalPaginas}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-700 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors"
+          >
+            Próxima ▶
+          </button>
+        </div>
+      )}
+
+      {/* Info de seleção multi-página */}
+      {paginasSelecionadas.size > 0 && (
+        <div className="bg-green-900/20 border border-green-700 rounded-xl p-3 flex items-center justify-between">
+          <p className="text-green-300 text-xs">
+            📑 Páginas selecionadas:{' '}
+            <strong className="text-white">{Array.from(paginasSelecionadas).sort((a, b) => a - b).join(', ')}</strong>
+          </p>
+          <p className="text-gray-500 text-xs">
+            {paginasSelecionadas.size > 1
+              ? 'Clica "Copiar X Página(s)" para juntar tudo'
+              : 'Seleciona mais páginas (clicar direito) para multi-cópia'}
+          </p>
+        </div>
+      )}
+
+      {/* Importar em bulk */}
+      {showBulkImport && (
+        <div className="bg-green-900/20 border border-green-700 rounded-xl p-5 space-y-3">
+          <h3 className="text-green-300 font-semibold text-sm">📥 Importar Códigos em Bulk</h3>
+          <p className="text-gray-400 text-xs">
+            Cola os comandos copiados diretamente:{' '}
+            <code className="text-green-400 font-mono">
+              locpulseira PSS54950;locpulseira PFB75791;locpulseira EIE58685;...
+            </code>
+          </p>
+          <textarea
+            value={bulkText}
+            onChange={(e) => setBulkText(e.target.value)}
+            placeholder={'locpulseira HYE28866 ;locpulseira PFB75791 ;locpulseira EIE58685 ;locpulseira BGL37897 ;locpulseira ILP53296 ;locpulseira SNV25509\n...'}
+            rows={5}
+            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-green-500 text-sm font-mono resize-none"
+          />
+          <div>
+            <label className="text-gray-400 text-xs mb-1 block">Cor para novas pulseiras:</label>
+            <div className="flex flex-wrap gap-2">
+              {CORES.map((c) => (
+                <button
+                  key={c.value}
+                  onClick={() => setBulkColor(c.value)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                    bulkColor === c.value
+                      ? 'border-white text-white bg-gray-600'
+                      : 'border-gray-600 text-gray-400 hover:border-gray-400'
+                  }`}
+                >
+                  <span className={`w-3 h-3 rounded-full ${c.class}`}></span>
+                  {c.label}
+                </button>
+              ))}
             </div>
-            <p className="text-gray-500 text-xs">
-              Cada perfil é dividido automaticamente em páginas de {MAX_PULSEIRAS_PER_COMMAND}. Podes copiar qualquer página separadamente.
-            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleBulkImport}
+              disabled={!bulkText.trim()}
+              className="bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              📥 Importar
+            </button>
+            <button
+              onClick={() => { setShowBulkImport(false); setBulkText(''); }}
+              className="bg-gray-700 hover:bg-gray-600 text-gray-300 px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Formulário de adição */}
+      {showForm && (
+        <div className="bg-gray-800 border border-gray-600 rounded-xl p-5 space-y-4">
+          <h3 className="text-white font-semibold text-sm">Nova Pulseira</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-gray-400 text-xs mb-1 block">Código *</label>
+              <input
+                type="text"
+                placeholder="ex: PSS54950"
+                value={codigo}
+                onChange={(e) => setCodigo(e.target.value.toUpperCase())}
+                onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm font-mono"
+              />
+            </div>
+            <div>
+              <label className="text-gray-400 text-xs mb-1 block">Descrição (opcional)</label>
+              <input
+                type="text"
+                placeholder="ex: Jogador Principal"
+                value={descricao}
+                onChange={(e) => setDescricao(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-gray-400 text-xs mb-2 block">Cor</label>
+            <div className="flex flex-wrap gap-2">
+              {CORES.map((c) => (
+                <button
+                  key={c.value}
+                  onClick={() => setCor(c.value)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                    cor === c.value
+                      ? 'border-white text-white bg-gray-600'
+                      : 'border-gray-600 text-gray-400 hover:border-gray-400'
+                  }`}
+                >
+                  <span className={`w-3 h-3 rounded-full ${c.class}`}></span>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={handleAdd}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              Adicionar
+            </button>
+            <button
+              onClick={() => setShowForm(false)}
+              className="bg-gray-700 hover:bg-gray-600 text-gray-300 px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Lista de pulseiras por página */}
+      {filtered.length === 0 ? (
+        <div className="text-center py-16 text-gray-500">
+          <div className="text-5xl mb-3">⌚</div>
+          <p className="text-lg font-medium text-gray-400">
+            {busca ? 'Nenhuma pulseira encontrada' : 'Nenhuma pulseira adicionada'}
+          </p>
+          <p className="text-sm mt-1">
+            {busca ? 'Tenta outro código ou descrição' : 'Clica em "Nova Pulseira" para começar'}
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="space-y-2">
+            {pulseirasPagina.map((p) => (
+              <div
+                key={p.id}
+                className={`border rounded-xl p-4 transition-all hover:scale-[1.01] ${corClass[p.cor] || corClass.blue}`}
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-3 h-3 rounded-full flex-shrink-0 ${corBadge[p.cor] || corBadge.blue}`}></span>
+                    <span className="font-mono font-bold text-white text-sm">{p.codigo}</span>
+                  </div>
+                  <button
+                    onClick={() => handleRemove(p)}
+                    className="text-gray-500 hover:text-red-400 transition-colors text-xs"
+                    title="Remover"
+                  >
+                    🗑️
+                  </button>
+                </div>
+                {p.descricao && p.descricao !== p.codigo && (
+                  <p className="text-gray-400 text-xs mb-3 ml-5">{p.descricao}</p>
+                )}
+                {p.nomePessoa && p.nomePessoa !== p.descricao && (
+                  <p className="text-blue-400 text-xs mb-2 ml-5">👤 {p.nomePessoa}</p>
+                )}
+                <div className="ml-5">
+                  <div className="bg-gray-900/60 rounded-lg px-3 py-2 font-mono text-xs text-gray-300 mb-2 border border-gray-700">
+                    locpulseira {p.codigo}
+                  </div>
+                  <button
+                    onClick={() => handleLocate(p)}
+                    className={`w-full py-1.5 rounded-lg text-xs font-medium transition-all ${
+                      copied === p.id
+                        ? 'bg-green-600 text-white'
+                        : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                    }`}
+                  >
+                    {copied === p.id ? '✅ Copiado!' : '📋 Copiar Comando'}
+                  </button>
+                </div>
+                <p className="text-gray-600 text-xs mt-2 ml-5">
+                  {new Date(p.createdAt).toLocaleDateString('pt-PT')}
+                </p>
+              </div>
+            ))}
           </div>
 
-          {profiles.length === 0 ? (
-            <div className="bg-gray-900 border border-dashed border-gray-800 rounded-xl p-5 text-center text-gray-500 text-sm">
-              Ainda não tens perfis. Importa um texto partilhado ou guarda uma seleção.
-            </div>
-          ) : (
-            profiles.map((profile) => {
-              const pages = chunkCodes(profile.codigos, MAX_PULSEIRAS_PER_COMMAND);
-              const pageIndex = Math.min(profilePages[profile.id] ?? 0, Math.max(pages.length - 1, 0));
-              const pageCodes = pages[pageIndex] ?? [];
+          {/* Navegação inferior (mobile) */}
+          <div className="flex items-center justify-between bg-gray-800 border border-gray-700 rounded-xl p-3">
+            <button
+              onClick={() => { setPaginaAtual((p) => Math.max(1, p - 1)); setPaginasSelecionadas(new Set()); }}
+              disabled={paginaAtual === 1}
+              className="flex items-center gap-1 px-4 py-2 rounded-lg text-xs font-medium bg-gray-700 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors"
+            >
+              ◀ Anterior
+            </button>
+            <span className="text-gray-400 text-xs">
+              Página {paginaAtual} de {totalPaginas}
+            </span>
+            <button
+              onClick={() => { setPaginaAtual((p) => Math.min(totalPaginas, p + 1)); setPaginasSelecionadas(new Set()); }}
+              disabled={paginaAtual === totalPaginas}
+              className="flex items-center gap-1 px-4 py-2 rounded-lg text-xs font-medium bg-gray-700 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors"
+            >
+              Próxima ▶
+            </button>
+          </div>
+        </>
+      )}
 
-              return (
-                <div key={profile.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-white text-sm font-semibold truncate">{profile.nome}</p>
-                      <p className="text-gray-500 text-xs">
-                        {profile.source === 'import' ? 'Importado' : 'Manual'} • {profile.codigos.length} pulseiras • {pages.length} páginas
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => handleDeleteProfile(profile)}
-                      className="text-gray-500 hover:text-red-400 transition-colors text-xs"
-                      title="Apagar perfil"
-                    >
-                      🗑️
-                    </button>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {pages.map((page, index) => (
-                      <button
-                        key={`${profile.id}-page-${index}`}
-                        onClick={() => handleProfilePageChange(profile.id, index, pages.length)}
-                        className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all ${
-                          pageIndex === index
-                            ? 'border-blue-500 bg-blue-600 text-white'
-                            : 'border-gray-700 bg-gray-800 text-gray-300 hover:border-gray-500'
-                        }`}
-                      >
-                        P{index + 1} · {page.length}
-                      </button>
-                    ))}
-                  </div>
-
-                  {pageCodes.length > 0 && (
-                    <div className="rounded-lg bg-gray-950 border border-gray-800 p-3 space-y-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs text-gray-500">
-                          Página {pageIndex + 1} de {pages.length}
-                        </p>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleProfilePageChange(profile.id, pageIndex - 1, pages.length)}
-                            disabled={pageIndex === 0}
-                            className="px-2.5 py-1 rounded-md bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-gray-300"
-                          >
-                            ←
-                          </button>
-                          <button
-                            onClick={() => handleProfilePageChange(profile.id, pageIndex + 1, pages.length)}
-                            disabled={pageIndex >= pages.length - 1}
-                            className="px-2.5 py-1 rounded-md bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-gray-300"
-                          >
-                            →
-                          </button>
-                        </div>
-                      </div>
-                      <code className="text-green-400 text-xs font-mono block whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
-                        {buildLocPulseiraCommands(pageCodes, ';')}
-                      </code>
-                    </div>
-                  )}
-
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => handleUseProfile(profile)}
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-xs font-medium transition-colors"
-                    >
-                      Usar perfil
-                    </button>
-                    <button
-                      onClick={() => handleCopyProfilePage(profile, pageIndex)}
-                      className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-xs font-medium transition-colors"
-                    >
-                      📋 Copiar página {pageIndex + 1}
-                    </button>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </aside>
-      </div>
+      {/* Legenda da paginação */}
+      {totalPaginas > 1 && (
+        <div className="text-center text-gray-600 text-xs space-y-1">
+          <p>📄 <strong className="text-gray-400">{PER_PAGINA}</strong> pulseiras por página</p>
+          <p>
+            💡 <strong className="text-gray-400">Clicar direito</strong> num número de página para selecionar multi-cópia
+          </p>
+        </div>
+      )}
     </div>
   );
 }
