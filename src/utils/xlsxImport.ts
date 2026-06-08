@@ -27,6 +27,14 @@ interface ParseSheetDataOptions {
   selectedNomeColumnKey?: string | null;
 }
 
+const BLOCKED_ROW_PHRASES = [
+  'pulseira eletronica retirada',
+  'pulseira eletrónica retirada',
+  'pulseira electronica retirada',
+  'pulseira electrnica retirada',
+  'retirada',
+];
+
 const PULSEIRA_CANDIDATES = [
   'pulseira',
   'codigo pulseira',
@@ -71,24 +79,55 @@ function cellToString(value: unknown) {
   return String(value ?? '').trim();
 }
 
+function normalizeText(value: unknown) {
+  return cellToString(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function rowContainsBlockedPhrase(row: unknown[]) {
+  const rowText = row.map((cell) => normalizeText(cell)).join(' | ');
+  return BLOCKED_ROW_PHRASES.some((phrase) => rowText.includes(phrase));
+}
+
 function isValidPulseiraCode(value: string) {
   return value.length >= 5 && /[A-Z]/.test(value) && /\d/.test(value);
 }
 
-function extractCode(value: unknown) {
+function isValidManualPulseiraCode(value: string) {
+  return value.length >= 3 && !['LOCPULSEIRA', 'KEYBOARD'].includes(value);
+}
+
+function extractCode(value: unknown, isManualSelection = false) {
   const text = cellToString(value).toUpperCase();
   if (!text) return '';
 
-  const locMatch = text.match(/LOCPULSEIRA\s+([A-Z0-9]{5,})/);
-  if (locMatch?.[1] && isValidPulseiraCode(locMatch[1])) return locMatch[1];
+  const locMatch = text.match(/LOCPULSEIRA\s+([A-Z0-9]{3,})/);
+  if (locMatch?.[1]) {
+    const candidate = locMatch[1].replace(/[^A-Z0-9]/g, '');
+    if (isManualSelection ? isValidManualPulseiraCode(candidate) : isValidPulseiraCode(candidate)) {
+      return candidate;
+    }
+  }
 
-  const matches = text.match(/[A-Z0-9]{5,}/g) ?? [];
+  const compact = text.replace(/LOCPULSEIRA/g, '').replace(/[^A-Z0-9]/g, '');
+  if (compact) {
+    const compactIsValid = isManualSelection
+      ? isValidManualPulseiraCode(compact)
+      : isValidPulseiraCode(compact);
+    if (compactIsValid) return compact;
+  }
+
+  const matches = text.match(/[A-Z0-9]{3,}/g) ?? [];
   const cleaned = matches
     .map((item) => item.replace(/[^A-Z0-9]/g, ''))
-    .filter(
-      (item) =>
-        isValidPulseiraCode(item) && item !== 'LOCPULSEIRA' && item !== 'KEYBOARD'
-    );
+    .filter((item) => {
+      const validator = isManualSelection ? isValidManualPulseiraCode : isValidPulseiraCode;
+      return validator(item) && item !== 'LOCPULSEIRA' && item !== 'KEYBOARD';
+    });
 
   if (cleaned.length === 0) return '';
   return cleaned.sort((a, b) => b.length - a.length)[0];
@@ -250,6 +289,7 @@ function parseSheetData(
 
   let pulseiraColumnIndex = detectedHeaders.length > 0 ? findBestHeaderIndex(detectedHeaders, PULSEIRA_CANDIDATES) : null;
   let nomeColumnIndex = detectedHeaders.length > 0 ? findBestHeaderIndex(detectedHeaders, NAME_CANDIDATES) : null;
+  const hasManualPulseiraSelection = Boolean(options.selectedPulseiraColumnKey);
 
   if (options.selectedPulseiraColumnKey) {
     const selected = columns.find((column) => column.key === options.selectedPulseiraColumnKey);
@@ -276,7 +316,9 @@ function parseSheetData(
   if (pulseiraColumnIndex !== null) {
     for (let rowIndex = dataStartRow; rowIndex < rawData.length; rowIndex += 1) {
       const row = rawData[rowIndex] ?? [];
-      const codigo = extractCode(row[pulseiraColumnIndex]);
+      if (rowContainsBlockedPhrase(row)) continue;
+
+      const codigo = extractCode(row[pulseiraColumnIndex], hasManualPulseiraSelection);
       if (!codigo) continue;
 
       const nome = nomeColumnIndex !== null ? normalizeName(row[nomeColumnIndex]) : '';
