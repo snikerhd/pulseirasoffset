@@ -20,6 +20,22 @@ function ensureArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
+function normalizePayload(raw: unknown): BackupPayload {
+  const source =
+    raw && typeof raw === 'object' && 'data' in (raw as Record<string, unknown>)
+      ? ((raw as Record<string, unknown>).data as Record<string, unknown>)
+      : (raw as Record<string, unknown> | null);
+
+  return {
+    version: Number(source?.version ?? 1),
+    exportedAt: String(source?.exportedAt ?? new Date().toISOString()),
+    pulseiras: ensureArray<Pulseira>(source?.pulseiras),
+    logs: ensureArray<LogEntry>(source?.logs),
+    binds: ensureArray<BindEntry>(source?.binds),
+    profiles: ensureArray<ProfileEntry>(source?.profiles),
+  };
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('pulseiras');
   const [pulseiras, setPulseiras] = useLocalStorage<Pulseira[]>('fivem_pulseiras', []);
@@ -45,16 +61,30 @@ export default function App() {
     [setLogs]
   );
 
-  const handleExportBackup = () => {
-    const payload: BackupPayload = {
+  const buildPayload = useCallback(
+    (): BackupPayload => ({
       version: 1,
       exportedAt: new Date().toISOString(),
       pulseiras,
       logs,
       binds,
       profiles,
-    };
+    }),
+    [pulseiras, logs, binds, profiles]
+  );
 
+  const applyPayload = useCallback(
+    (payload: BackupPayload) => {
+      setPulseiras(payload.pulseiras);
+      setLogs(payload.logs);
+      setBinds(payload.binds);
+      setProfiles(payload.profiles);
+    },
+    [setPulseiras, setLogs, setBinds, setProfiles]
+  );
+
+  const handleExportBackup = () => {
+    const payload = buildPayload();
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -72,20 +102,10 @@ export default function App() {
 
     try {
       const text = await file.text();
-      const parsed = JSON.parse(text) as Partial<BackupPayload>;
-
-      const importedPulseiras = ensureArray<Pulseira>(parsed.pulseiras);
-      const importedLogs = ensureArray<LogEntry>(parsed.logs);
-      const importedBinds = ensureArray<BindEntry>(parsed.binds);
-      const importedProfiles = ensureArray<ProfileEntry>(parsed.profiles);
-
-      setPulseiras(importedPulseiras);
-      setLogs(importedLogs);
-      setBinds(importedBinds);
-      setProfiles(importedProfiles);
-
+      const parsed = normalizePayload(JSON.parse(text));
+      applyPayload(parsed);
       showBackupMessage(
-        `Backup restaurado: ${importedPulseiras.length} pulseiras, ${importedProfiles.length} perfis e ${importedBinds.length} binds.`
+        `Backup restaurado: ${parsed.pulseiras.length} pulseiras, ${parsed.profiles.length} perfis e ${parsed.binds.length} binds.`
       );
     } catch (error) {
       console.error(error);
@@ -108,20 +128,21 @@ export default function App() {
       <section className="border-b border-gray-800 bg-gray-925/60">
         <div className="max-w-7xl mx-auto px-4 py-4 space-y-3">
           <div className="rounded-xl border border-amber-800 bg-amber-900/20 px-4 py-3">
-            <p className="text-amber-300 text-sm font-medium">⚠️ Aviso sobre modo privado / incógnito</p>
+            <p className="text-amber-300 text-sm font-medium">⚠️ Sobre guardar dados</p>
             <p className="text-gray-300 text-xs mt-1">
-              No modo privado, o browser pode apagar <strong className="text-white">localStorage</strong> quando fechas a sessão.
+              Em modo privado/incógnito, o browser pode apagar o armazenamento local quando fechas a sessão.
               Para não perder pulseiras, perfis, binds e logs, usa sempre <strong className="text-white">Exportar Backup</strong>.
             </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-gray-800 bg-gray-900 px-4 py-3">
+          <div className="rounded-xl border border-gray-800 bg-gray-900 px-4 py-4 space-y-3">
             <div>
-              <p className="text-white text-sm font-medium">Backup dos dados</p>
+              <p className="text-white text-sm font-medium">💾 Backup local</p>
               <p className="text-gray-500 text-xs mt-1">
                 Exporta um ficheiro JSON com todas as pulseiras, perfis, binds e logs. Depois podes restaurar tudo com Importar Backup.
               </p>
             </div>
+
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={handleExportBackup}
@@ -137,7 +158,7 @@ export default function App() {
           </div>
 
           {backupMessage && (
-            <div className="rounded-xl border border-blue-800 bg-blue-900/20 px-4 py-3 text-sm text-blue-300">
+            <div className="rounded-xl border border-emerald-800 bg-emerald-900/20 px-4 py-3 text-sm text-emerald-300">
               {backupMessage}
             </div>
           )}

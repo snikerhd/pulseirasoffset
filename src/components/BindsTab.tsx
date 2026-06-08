@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { BindEntry, LogEntry, Pulseira } from '../types';
 import {
   buildLocPulseiraCommands,
-  limitPulseiraCodes,
+  chunkCodes,
   MAX_PULSEIRAS_PER_COMMAND,
 } from '../utils/pulseiras';
 
@@ -79,9 +79,9 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
   const [showForm, setShowForm] = useState(false);
 
   const [batchKey, setBatchKey] = useState('NUMPAD0');
-  const [batchDescricao, setBatchDescricao] = useState('');
   const [batchSeparator, setBatchSeparator] = useState(';');
   const [selectedBatchCodes, setSelectedBatchCodes] = useState<string[]>([]);
+  const [batchPage, setBatchPage] = useState(0);
 
   const usedKeys = binds.map((b) => b.key);
 
@@ -90,8 +90,12 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
     return pulseiras.map((p) => p.codigo);
   }, [pulseiras, selectedBatchCodes]);
 
-  const limitedBatchCodes = useMemo(() => limitPulseiraCodes(selectedCodes), [selectedCodes]);
-  const ignoredBatchCount = Math.max(0, selectedCodes.length - limitedBatchCodes.length);
+  const batchPages = useMemo(
+    () => chunkCodes(selectedCodes, MAX_PULSEIRAS_PER_COMMAND),
+    [selectedCodes]
+  );
+  const safeBatchPage = Math.min(batchPage, Math.max(batchPages.length - 1, 0));
+  const currentBatchPageCodes = batchPages[safeBatchPage] ?? [];
 
   const getComando = () => {
     if (tipo === 'locpulseira') {
@@ -102,7 +106,7 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
 
   const getBindLine = (bind: BindEntry) => `bind keyboard ${bind.key} "${bind.comando}"`;
 
-  const getBatchCommand = () => buildLocPulseiraCommands(limitedBatchCodes, batchSeparator);
+  const getBatchCommand = () => buildLocPulseiraCommands(currentBatchPageCodes, batchSeparator);
 
   const isKeyUsed = (targetKey: string) => binds.some((bind) => bind.key === targetKey);
 
@@ -153,19 +157,22 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
       return;
     }
 
-    if (selectedCodes.length === 0) {
-      alert('Seleciona pelo menos uma pulseira.');
+    if (selectedCodes.length === 0 || currentBatchPageCodes.length === 0) {
+      alert('Seleciona pelo menos uma pulseira ou uma página válida.');
       return;
     }
 
     const comando = getBatchCommand();
-    const quantidade = limitedBatchCodes.length;
+    const quantidade = currentBatchPageCodes.length;
+    const paginaAtual = safeBatchPage + 1;
+    const totalPaginas = Math.max(batchPages.length, 1);
 
     const novo: BindEntry = {
       id: crypto.randomUUID(),
       key: batchKey,
-      codigoPulseira: quantidade === 1 ? limitedBatchCodes[0] : `${quantidade} pulseiras`,
-      descricao: batchDescricao.trim() || `Localizar ${quantidade} pulseiras`,
+      codigoPulseira:
+        quantidade === 1 ? currentBatchPageCodes[0] : `${quantidade} pulseiras · página ${paginaAtual}`,
+      descricao: `Localizar ${quantidade} pulseiras (página ${paginaAtual}/${totalPaginas})`,
       tipo: 'custom',
       comando,
     };
@@ -173,15 +180,12 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
     setBinds((prev) => [...prev, novo]);
     addLog({
       type: 'bind',
-      message:
-        ignoredBatchCount > 0
-          ? `Bind em lote criado: ${batchKey} → ${quantidade} pulseiras (${ignoredBatchCount} fora por limite)`
-          : `Bind em lote criado: ${batchKey} → ${quantidade} pulseiras`,
+      message: `Bind em lote criado: ${batchKey} → página ${paginaAtual}/${totalPaginas} com ${quantidade} pulseiras`,
     });
 
-    setBatchDescricao('');
     setSelectedBatchCodes([]);
     setBatchSeparator(';');
+    setBatchPage(0);
   };
 
   const handleRemove = (bind: BindEntry) => {
@@ -292,14 +296,28 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
             </div>
 
             <div>
-              <label className="text-gray-400 text-xs mb-1 block">Descrição (opcional)</label>
-              <input
-                type="text"
-                value={batchDescricao}
-                onChange={(e) => setBatchDescricao(e.target.value)}
-                placeholder="ex: Verificar todas as pulseiras"
-                className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm"
-              />
+              <label className="text-gray-400 text-xs mb-2 block">Página das pulseiras guardadas</label>
+              {batchPages.length === 0 ? (
+                <div className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-gray-500 text-sm">
+                  Ainda não existem páginas disponíveis.
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {batchPages.map((page, index) => (
+                    <button
+                      key={`batch-tab-${index}`}
+                      onClick={() => setBatchPage(index)}
+                      className={`rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
+                        safeBatchPage === index
+                          ? 'border-purple-500 bg-purple-600 text-white'
+                          : 'border-gray-600 text-gray-400 hover:border-gray-400 hover:text-white'
+                      }`}
+                    >
+                      Página {index + 1} · {page.length}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>
@@ -357,22 +375,57 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
               </div>
               <p className="text-gray-500 text-xs mt-2">
                 {selectedBatchCodes.length === 0
-                  ? `Sem seleção manual: vai usar até ${MAX_PULSEIRAS_PER_COMMAND} de ${pulseiras.length}`
-                  : `Selecionadas ${selectedBatchCodes.length}; entram ${limitedBatchCodes.length} no bind`}
+                  ? `Sem seleção manual: foram encontradas ${batchPages.length} páginas de até ${MAX_PULSEIRAS_PER_COMMAND}`
+                  : `Selecionadas ${selectedBatchCodes.length} pulseiras, distribuídas em ${batchPages.length} página(s)`}
               </p>
-              {ignoredBatchCount > 0 && (
-                <p className="text-amber-400 text-xs mt-1">
-                  {ignoredBatchCount} ficaram fora do bind por causa do limite.
-                </p>
-              )}
             </div>
+
+            {batchPages.length > 0 && (
+              <div className="rounded-lg border border-gray-700 bg-gray-950 p-3 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-gray-400 text-xs block">Página do bind</label>
+                  <span className="text-xs text-gray-500">
+                    Página {safeBatchPage + 1} de {batchPages.length}
+                  </span>
+                </div>
+                <select
+                  value={safeBatchPage}
+                  onChange={(e) => setBatchPage(Number(e.target.value))}
+                  className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
+                >
+                  {batchPages.map((page, index) => (
+                    <option key={`batch-page-${index}`} value={index}>
+                      Página {index + 1} — {page.length} pulseiras
+                    </option>
+                  ))}
+                </select>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setBatchPage((prev) => Math.max(prev - 1, 0))}
+                    disabled={safeBatchPage === 0}
+                    className="flex-1 px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-gray-300"
+                  >
+                    Página anterior
+                  </button>
+                  <button
+                    onClick={() => setBatchPage((prev) => Math.min(prev + 1, batchPages.length - 1))}
+                    disabled={safeBatchPage >= batchPages.length - 1}
+                    className="flex-1 px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-gray-300"
+                  >
+                    Página seguinte
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {selectedCodes.length > 0 && (
+        {selectedCodes.length > 0 && currentBatchPageCodes.length > 0 && (
           <div className="bg-gray-950 rounded-lg px-4 py-3 border border-gray-700 space-y-2">
             <p className="text-gray-500 text-xs">Preview do bind em lote:</p>
-            <p className="text-xs text-gray-400">Entram {limitedBatchCodes.length} pulseiras no comando.</p>
+            <p className="text-xs text-gray-400">
+              Vai usar a página {safeBatchPage + 1}/{batchPages.length} com {currentBatchPageCodes.length} pulseiras.
+            </p>
             <code className="text-green-400 text-xs sm:text-sm font-mono whitespace-pre-wrap break-all block">
               bind keyboard {batchKey} "{getBatchCommand()}"
             </code>
@@ -382,13 +435,13 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
         <div className="flex flex-col sm:flex-row gap-2">
           <button
             onClick={handleCreateBatchBind}
-            disabled={pulseiras.length === 0 || selectedCodes.length === 0}
+            disabled={pulseiras.length === 0 || currentBatchPageCodes.length === 0}
             className="bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
           >
-            Criar Bind com até {MAX_PULSEIRAS_PER_COMMAND}
+            Criar Bind da página {batchPages.length > 0 ? safeBatchPage + 1 : 0}
           </button>
           <p className="text-gray-500 text-xs self-center">
-            Dica: se não escolheres pulseiras manualmente, ele usa automaticamente até {MAX_PULSEIRAS_PER_COMMAND}.
+            Escolhe a tecla e a página. O bind é criado só com as pulseiras dessa página.
           </p>
         </div>
       </div>

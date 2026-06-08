@@ -2,6 +2,12 @@ import { useCallback, useRef, useState } from 'react';
 import { Pulseira, LogEntry } from '../types';
 import * as XLSX from 'xlsx';
 
+interface ExcelRow {
+  row: number;
+  pulseira: string;
+  nome: string;
+}
+
 interface ExcelImportProps {
   pulseiras: Pulseira[];
   setPulseiras: (p: Pulseira[] | ((prev: Pulseira[]) => Pulseira[])) => void;
@@ -9,72 +15,84 @@ interface ExcelImportProps {
   onClose: () => void;
 }
 
-type ExcelRow = { row: number; pulseira: string; nome: string };
-
-function normalizeCell(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed || /^empty_\d+$/i.test(trimmed)) return '';
-    return trimmed;
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value).trim();
-
-  if (typeof value === 'object') {
-    const text = (value as { w?: string; text?: string }).w ?? (value as { text?: string }).text;
-    if (typeof text === 'string') {
-      const trimmed = text.trim();
-      if (!trimmed || /^empty_\d+$/i.test(trimmed)) return '';
-      return trimmed;
-    }
-  }
-
-  return String(value).trim();
-}
-
-function extractPulseiraCode(value: unknown): string {
-  const text = normalizeCell(value).toUpperCase();
-  if (!text) return '';
-  const match = text.match(/^([A-Z]{2,4}\d{3,6})$/);
-  return match && match[1].length === 8 ? match[1] : '';
-}
-
-function detectColumns(rows: Record<string, unknown>[]): { pulseiraCol: string | null; nomeCol: string | null } {
-  if (!rows.length) return { pulseiraCol: null, nomeCol: null };
+// Função para detectar automaticamente qual coluna é pulseira e qual é nome
+function detectColumns(rows: Record<string, unknown>[]): {
+  pulseiraCol: string | null;
+  nomeCol: string | null;
+} {
+  if (rows.length === 0) return { pulseiraCol: null, nomeCol: null };
 
   const cols = Object.keys(rows[0]);
-  const headerLower = cols.map((c) => c.toLowerCase());
-  const pulseiraHeaders = ['__empty_4', 'pulseira', 'codigo', 'código', 'code', 'id', 'tag', 'rfid'];
-  const nomeHeaders = ['__empty_3', 'nome', 'name', 'acusado', 'pessoa', 'person', 'suspeito', 'suspect', 'jogador'];
 
   let pulseiraCol: string | null = null;
   let nomeCol: string | null = null;
 
-  for (let i = 0; i < cols.length; i += 1) {
+  // Verificar cabeçalhos primeiro por nome
+  const headerLower = cols.map((c) => c.toLowerCase());
+
+  // Procurar por nomes comuns de colunas
+  const pulseiraKeywords = ['pulseira', 'bracelet', 'id', 'codigo', 'código', 'cod', 'code', 'tag', 'rfid'];
+  const nomeKeywords = ['nome', 'name', 'acusado', 'pessoa', 'person', 'suspeito', 'suspect', 'player', 'jogador', 'citizen'];
+
+  for (let i = 0; i < cols.length; i++) {
     const lower = headerLower[i];
-    if (!pulseiraCol && pulseiraHeaders.some((k) => lower.includes(k))) pulseiraCol = cols[i];
-    if (!nomeCol && nomeHeaders.some((k) => lower.includes(k))) nomeCol = cols[i];
+    if (!pulseiraCol && pulseiraKeywords.some((k) => lower.includes(k))) {
+      pulseiraCol = cols[i];
+    }
+    if (!nomeCol && nomeKeywords.some((k) => lower.includes(k))) {
+      nomeCol = cols[i];
+    }
   }
 
+  // Se não encontrou por cabeçalho, verificar conteúdo
   if (!pulseiraCol || !nomeCol) {
-    const sample = rows.slice(0, 5);
+    const sampleSize = Math.min(5, rows.length);
+    const sample = rows.slice(0, sampleSize);
+
     for (const col of cols) {
       if (pulseiraCol && nomeCol) break;
-      const values = sample.map((r) => normalizeCell(r[col])).filter(Boolean);
-      if (!values.length) continue;
 
-      if (!pulseiraCol) {
-        const matchedLikePulseira = values.filter((v) => /^[A-Z]{2,4}\d{4}$/i.test(v)).length;
-        if (matchedLikePulseira >= Math.ceil(sample.length / 2)) pulseiraCol = col;
+      const values = sample.map((r) => String(r[col] || '')).filter(Boolean);
+      if (values.length === 0) continue;
+
+      // Detectar pulseira: formato tipo PSS54950, XXXX99999, 2-4 letras + 3-5 números
+      const pulseiraRegex = /^[A-Z]{2,4}\d{3,5}$/i;
+      const pulseiraMatchCount = values.filter((v) => pulseiraRegex.test(v.trim())).length;
+
+      // Detectar nome: não é código de pulseira, tem mais de 2 caracteres, não é só números
+      const nomeLike = values.filter((v) => {
+        const trimmed = v.trim();
+        return (
+          trimmed.length > 2 &&
+          !pulseiraRegex.test(trimmed) &&
+          isNaN(Number(trimmed)) &&
+          /[a-zA-ZÀ-ÿ]/.test(trimmed)
+        );
+      }).length;
+
+      if (!pulseiraCol && pulseiraMatchCount >= Math.ceil(sampleSize / 2)) {
+        pulseiraCol = col;
       }
-      if (!nomeCol) {
-        const matchedLikeName = values.filter((v) => v.length > 2 && !/^[A-Z]{2,4}\d{4}$/i.test(v) && /[a-zA-ZÀ-ÿ]/.test(v)).length;
-        if (matchedLikeName >= Math.ceil(sample.length / 2)) nomeCol = col;
+      if (!nomeCol && nomeLike >= Math.ceil(sampleSize / 2)) {
+        nomeCol = col;
       }
     }
   }
 
   return { pulseiraCol, nomeCol };
+}
+
+// Extrair código de pulseira de vários formatos
+function extractPulseiraCode(value: unknown): string {
+  const str = String(value || '').trim();
+  if (!str) return '';
+
+  // Padrão: letras+números (ex: PSS54950, HYE28866, DLTI5873)
+  const match = str.match(/([A-Z]{2,4}\d{3,5})/i);
+  if (match) return match[1].toUpperCase();
+
+  // Se for só o código, retorna em maiúsculas
+  return str.toUpperCase();
 }
 
 export default function ExcelImport({ pulseiras, setPulseiras, addLog, onClose }: ExcelImportProps) {
@@ -88,18 +106,6 @@ export default function ExcelImport({ pulseiras, setPulseiras, addLog, onClose }
   const [color, setColor] = useState('blue');
   const [step, setStep] = useState<'upload' | 'config'>('upload');
 
-  const updatePreview = useCallback(
-    (data: Record<string, unknown>[], pCol: string, nCol: string) => {
-      const previewRows: ExcelRow[] = data.slice(0, 10).map((r, i) => ({
-        row: i + 2,
-        pulseira: pCol ? extractPulseiraCode(r[pCol]) : '',
-        nome: nCol ? normalizeCell(r[nCol]) : '',
-      }));
-      setPreview(previewRows);
-    },
-    []
-  );
-
   const handleFileUpload = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -110,13 +116,13 @@ export default function ExcelImport({ pulseiras, setPulseiras, addLog, onClose }
 
       reader.onload = (evt) => {
         try {
-          const data = typeof evt.target?.result === 'string' ? evt.target.result : '';
+          const data = evt.target?.result;
           const workbook = XLSX.read(data, { type: 'binary' });
           const firstSheet = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[firstSheet];
           const jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' });
 
-          if (!jsonData.length) {
+          if (jsonData.length === 0) {
             alert('O ficheiro Excel está vazio!');
             return;
           }
@@ -125,10 +131,14 @@ export default function ExcelImport({ pulseiras, setPulseiras, addLog, onClose }
           setHeaders(cols);
           setRows(jsonData);
 
+          // Detecção automática de colunas
           const detected = detectColumns(jsonData);
-          setPulseiraCol(detected.pulseiraCol ?? '');
-          setNomeCol(detected.nomeCol ?? '');
-          updatePreview(jsonData, detected.pulseiraCol ?? '', detected.nomeCol ?? '');
+          setPulseiraCol(detected.pulseiraCol || '');
+          setNomeCol(detected.nomeCol || '');
+
+          // Gerar preview inicial
+          updatePreview(jsonData, detected.pulseiraCol || '', detected.nomeCol || '');
+
           setStep('config');
         } catch (err) {
           console.error(err);
@@ -138,17 +148,29 @@ export default function ExcelImport({ pulseiras, setPulseiras, addLog, onClose }
 
       reader.readAsBinaryString(file);
     },
-    [updatePreview]
+    []
+  );
+
+  const updatePreview = useCallback(
+    (data: Record<string, unknown>[], pCol: string, nCol: string) => {
+      const previewRows: ExcelRow[] = data.slice(0, 10).map((r, i) => ({
+        row: i + 2,
+        pulseira: pCol ? extractPulseiraCode(r[pCol]) : '',
+        nome: nCol && r[nCol] ? String(r[nCol]).trim() : '',
+      }));
+      setPreview(previewRows);
+    },
+    []
   );
 
   const handleColChange = (col: string, type: 'pulseira' | 'nome') => {
     if (type === 'pulseira') {
       setPulseiraCol(col);
       updatePreview(rows, col, nomeCol);
-      return;
+    } else {
+      setNomeCol(col);
+      updatePreview(rows, pulseiraCol, col);
     }
-    setNomeCol(col);
-    updatePreview(rows, pulseiraCol, col);
   };
 
   const handleImport = () => {
@@ -162,17 +184,19 @@ export default function ExcelImport({ pulseiras, setPulseiras, addLog, onClose }
     const existentes = new Set(pulseiras.map((p) => p.codigo));
     let importadas = 0;
 
-    for (let i = 0; i < rows.length; i += 1) {
+    for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       const pulseiraCode = extractPulseiraCode(r[pulseiraCol]);
 
       if (!pulseiraCode) continue;
+
       if (existentes.has(pulseiraCode)) {
         duplicatas.push(pulseiraCode);
         continue;
       }
 
-      const nome = nomeCol ? normalizeCell(r[nomeCol]) : `Linha ${i + 2}`;
+      const nomeRaw = nomeCol && r[nomeCol] ? String(r[nomeCol]).trim() : '';
+      const nome = nomeRaw || `Linha ${i + 2}`;
 
       existentes.add(pulseiraCode);
       novas.push({
@@ -183,7 +207,7 @@ export default function ExcelImport({ pulseiras, setPulseiras, addLog, onClose }
         createdAt: new Date().toISOString(),
         nomePessoa: nome,
       });
-      importadas += 1;
+      importadas++;
     }
 
     if (importadas === 0 && duplicatas.length === 0) {
@@ -203,15 +227,22 @@ export default function ExcelImport({ pulseiras, setPulseiras, addLog, onClose }
   return (
     <div className="bg-gray-800 border border-gray-600 rounded-xl p-5 space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-white font-semibold text-sm flex items-center gap-2">📊 Importar do Excel (.xlsx)</h3>
-        <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors text-sm">✕</button>
+        <h3 className="text-white font-semibold text-sm flex items-center gap-2">
+          📊 Importar do Excel (.xlsx)
+        </h3>
+        <button
+          onClick={onClose}
+          className="text-gray-400 hover:text-white transition-colors text-sm"
+        >
+          ✕
+        </button>
       </div>
 
       {step === 'upload' ? (
         <div className="space-y-3">
           <p className="text-gray-400 text-xs">
             Coloca num ficheiro Excel uma <strong className="text-white">coluna com códigos de pulseira</strong> (ex: PSS54950, HYE28866) e outra com os
-            <strong className="text-white"> nomes das pessoas</strong>.
+            <strong className="text-white"> nomes das pessoas</strong>. O sistema detecta automaticamente!
           </p>
           <div className="bg-gray-900/50 border border-dashed border-gray-600 rounded-xl p-6 text-center">
             <p className="text-gray-500 text-xs mb-3">Formato esperado:</p>
@@ -223,14 +254,20 @@ export default function ExcelImport({ pulseiras, setPulseiras, addLog, onClose }
                 <p className="text-gray-300">EIE58685</p>
               </div>
               <div className="text-left">
-                <p className="text-blue-400 font-bold mb-1">Nome do Acusado</p>
+                <p className="text-blue-400 font-bold mb-1">Nome da Pessoa</p>
                 <p className="text-gray-300">João Silva</p>
                 <p className="text-gray-300">Maria Santos</p>
                 <p className="text-gray-300">Pedro Costa</p>
               </div>
             </div>
           </div>
-          <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
           <button
             onClick={() => fileInputRef.current?.click()}
             className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-5 py-3 rounded-lg font-medium text-sm transition-colors"
@@ -240,14 +277,18 @@ export default function ExcelImport({ pulseiras, setPulseiras, addLog, onClose }
         </div>
       ) : (
         <div className="space-y-4">
+          {/* Info do ficheiro */}
           <div className="bg-gray-900/50 rounded-lg px-3 py-2 flex items-center justify-between">
             <span className="text-gray-300 text-xs truncate">📄 {fileName}</span>
             <span className="text-gray-500 text-xs">{rows.length} linhas encontradas</span>
           </div>
 
+          {/* Seleção de colunas */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-gray-400 text-xs mb-1 block font-medium">📍 Coluna das PULSEIRAS *</label>
+              <label className="text-gray-400 text-xs mb-1 block font-medium">
+                📍 Coluna das PULSEIRAS *
+              </label>
               <select
                 value={pulseiraCol}
                 onChange={(e) => handleColChange(e.target.value, 'pulseira')}
@@ -255,13 +296,21 @@ export default function ExcelImport({ pulseiras, setPulseiras, addLog, onClose }
               >
                 <option value="">— Selecione —</option>
                 {headers.map((h) => (
-                  <option key={h} value={h}>{h}</option>
+                  <option key={h} value={h}>
+                    {h}
+                  </option>
                 ))}
               </select>
-              {pulseiraCol && <p className="text-green-400 text-xs mt-1">✅ Detetado como coluna de pulseiras</p>}
+              {pulseiraCol && (
+                <p className="text-green-400 text-xs mt-1">
+                  ✅ Detetado como coluna de pulseiras
+                </p>
+              )}
             </div>
             <div>
-              <label className="text-gray-400 text-xs mb-1 block font-medium">👤 Coluna dos NOMES (opcional)</label>
+              <label className="text-gray-400 text-xs mb-1 block font-medium">
+                👤 Coluna dos NOMES (opcional)
+              </label>
               <select
                 value={nomeCol}
                 onChange={(e) => handleColChange(e.target.value, 'nome')}
@@ -269,13 +318,20 @@ export default function ExcelImport({ pulseiras, setPulseiras, addLog, onClose }
               >
                 <option value="">— Nenhuma / Não tem —</option>
                 {headers.map((h) => (
-                  <option key={h} value={h}>{h}</option>
+                  <option key={h} value={h}>
+                    {h}
+                  </option>
                 ))}
               </select>
-              {nomeCol && <p className="text-blue-400 text-xs mt-1">✅ Será guardado como nome da pessoa</p>}
+              {nomeCol && (
+                <p className="text-blue-400 text-xs mt-1">
+                  ✅ Será guardado como nome da pessoa
+                </p>
+              )}
             </div>
           </div>
 
+          {/* Cor */}
           <div>
             <label className="text-gray-400 text-xs mb-1 block">Cor para importar:</label>
             <div className="flex flex-wrap gap-2">
@@ -293,39 +349,57 @@ export default function ExcelImport({ pulseiras, setPulseiras, addLog, onClose }
                     color === c.value ? 'border-white text-white bg-gray-600' : 'border-gray-600 text-gray-400'
                   }`}
                 >
-                  <span className={`w-3 h-3 rounded-full ${c.class}`}></span>{c.label}
+                  <span className={`w-3 h-3 rounded-full ${c.class}`}></span>
+                  {c.label}
                 </button>
               ))}
             </div>
           </div>
 
+          {/* Preview */}
           {preview.length > 0 && (
             <div>
-              <p className="text-gray-400 text-xs mb-2">👁️ Preview das primeiras {preview.length} linhas:</p>
+              <p className="text-gray-400 text-xs mb-2">
+                👁️ Preview das primeiras {preview.length} linhas:
+              </p>
               <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-gray-800">
                       <th className="px-3 py-2 text-left text-gray-400 font-medium">Linha</th>
-                      <th className="px-3 py-2 text-left text-yellow-400 font-medium">Pulseira {pulseiraCol ? `(${pulseiraCol})` : ''}</th>
-                      <th className="px-3 py-2 text-left text-blue-400 font-medium">Nome {nomeCol ? `(${nomeCol})` : ''}</th>
+                      <th className="px-3 py-2 text-left text-yellow-400 font-medium">
+                        Pulseira {pulseiraCol ? `(${pulseiraCol})` : ''}
+                      </th>
+                      <th className="px-3 py-2 text-left text-blue-400 font-medium">
+                        Nome {nomeCol ? `(${nomeCol})` : ''}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {preview.map((r, i) => (
-                      <tr key={i} className={`border-t border-gray-700 ${r.pulseira ? '' : 'opacity-40'}`}>
+                      <tr
+                        key={i}
+                        className={`border-t border-gray-700 ${r.pulseira ? '' : 'opacity-40'}`}
+                      >
                         <td className="px-3 py-2 text-gray-500">{r.row}</td>
-                        <td className={`px-3 py-2 font-mono ${r.pulseira ? 'text-green-400' : 'text-red-400'}`}>{r.pulseira || '(vazio)'}</td>
+                        <td className={`px-3 py-2 font-mono ${r.pulseira ? 'text-green-400' : 'text-red-400'}`}>
+                          {r.pulseira || '(vazio)'}
+                        </td>
                         <td className="px-3 py-2 text-white">{r.nome || '(sem nome)'}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              {rows.length > 10 && <p className="text-gray-500 text-xs mt-1">... e mais {rows.length - 10} linhas</p>}
+              {rows.length > 10 && (
+                <p className="text-gray-500 text-xs mt-1">
+                  ... e mais {rows.length - 10} linhas
+                </p>
+              )}
             </div>
           )}
 
+          {/* Botões */}
           <div className="flex gap-2 pt-1">
             <button
               onClick={handleImport}
