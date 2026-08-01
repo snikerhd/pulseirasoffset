@@ -1,4 +1,4 @@
-export const MAX_PULSEIRAS_PER_COMMAND = 18;
+export const MAX_PULSEIRAS_PER_COMMAND = 10;
 
 export function uniqueCodes(codes: string[]) {
   return Array.from(new Set(codes.map((code) => code.trim().toUpperCase()).filter(Boolean)));

@@ -153,14 +153,14 @@ export default function LogsTab({ logs, setLogs }: LogsTabProps) {
             >
               <span className="text-base flex-shrink-0 mt-0.5">{logIcon[log.type]}</span>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
+                <p>
                   <span className="text-xs font-bold opacity-70">{logTypelabel[log.type]}</span>
                   {log.codigo && (
                     <span className="font-mono text-xs bg-gray-900/50 px-2 py-0.5 rounded text-white">
                       {log.codigo}
                     </span>
                   )}
-                </div>
+                </p>
                 <p className="text-sm mt-0.5 truncate">{log.message}</p>
               </div>
               <span className="text-xs opacity-50 flex-shrink-0">

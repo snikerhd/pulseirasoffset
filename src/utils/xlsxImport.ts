@@ -171,7 +171,9 @@ function findBestHeaderIndex(headers: string[], candidates: string[]) {
 
   for (const candidate of candidates) {
     const normalizedCandidate = normalizeHeader(candidate);
-    const found = normalizedHeaders.find((header) => header.normalized.includes(normalizedCandidate));
+    const found = normalizedHeaders.find((header) =>
+      header.normalized.includes(normalizedCandidate)
+    );
     if (found) return found.index;
   }
 
@@ -185,8 +187,10 @@ function findHeaderRow(data: unknown[][]) {
 
   const maxRowsToScan = Math.min(data.length, 25);
 
-  for (let rowIndex = 0; rowIndex < maxRowsToScan; rowIndex += 1) {
-    const row = data[rowIndex] ?? [];
+  for (let rowIndex = 0; rowIndex < maxRowsToScan; rowIndex++) {
+    const row = data[rowIndex];
+    if (!Array.isArray(row)) continue;
+
     const headers = row.map((cell) => cellToString(cell));
     const nonEmptyCount = headers.filter(Boolean).length;
     if (nonEmptyCount === 0) continue;
@@ -205,7 +209,7 @@ function findHeaderRow(data: unknown[][]) {
     }
   }
 
-  if (bestRowIndex < 0 || bestScore < 3) {
+  if (bestRowIndex < 0) {
     return { rowIndex: 0, headers: [] as string[] };
   }
 
@@ -216,12 +220,14 @@ function inferPulseiraColumnIndex(data: unknown[][], startRow: number, maxCols: 
   let bestIndex: number | null = null;
   let bestScore = 0;
 
-  for (let columnIndex = 0; columnIndex < maxCols; columnIndex += 1) {
+  for (let columnIndex = 0; columnIndex < maxCols; columnIndex++) {
     let score = 0;
+    const maxRows = Math.min(data.length, startRow + 20);
 
-    for (let rowIndex = startRow; rowIndex < Math.min(data.length, startRow + 80); rowIndex += 1) {
-      const value = data[rowIndex]?.[columnIndex];
-      if (isLikelyCode(value)) score += 1;
+    for (let rowIndex = startRow; rowIndex < maxRows; rowIndex++) {
+      const row = data[rowIndex];
+      if (!Array.isArray(row)) continue;
+      if (isLikelyCode(row[columnIndex])) score++;
     }
 
     if (score > bestScore) {
@@ -242,18 +248,16 @@ function inferNameColumnIndex(
   let bestIndex: number | null = null;
   let bestScore = 0;
 
-  for (let columnIndex = 0; columnIndex < maxCols; columnIndex += 1) {
+  for (let columnIndex = 0; columnIndex < maxCols; columnIndex++) {
     if (columnIndex === pulseiraColumnIndex) continue;
 
     let score = 0;
+    const maxRows = Math.min(data.length, startRow + 20);
 
-    for (let rowIndex = startRow; rowIndex < Math.min(data.length, startRow + 80); rowIndex += 1) {
-      const value = data[rowIndex]?.[columnIndex];
-      if (isLikelyName(value)) score += 1;
-    }
-
-    if (pulseiraColumnIndex !== null && Math.abs(columnIndex - pulseiraColumnIndex) <= 2) {
-      score += 2;
+    for (let rowIndex = startRow; rowIndex < maxRows; rowIndex++) {
+      const row = data[rowIndex];
+      if (!Array.isArray(row)) continue;
+      if (isLikelyName(row[columnIndex])) score++;
     }
 
     if (score > bestScore) {
@@ -283,12 +287,20 @@ function parseSheetData(
   options: ParseSheetDataOptions = {}
 ) {
   const { rowIndex: headerRowIndex, headers: detectedHeaders } = findHeaderRow(rawData);
-  const maxCols = Math.max(...rawData.map((row) => row.length), 0);
+  const maxCols = Math.max(...rawData.map((row) => (Array.isArray(row) ? row.length : 0)), 0);
   const displayHeaders = makeDisplayHeaders(detectedHeaders, maxCols);
   const columns = makeColumns(displayHeaders);
 
-  let pulseiraColumnIndex = detectedHeaders.length > 0 ? findBestHeaderIndex(detectedHeaders, PULSEIRA_CANDIDATES) : null;
-  let nomeColumnIndex = detectedHeaders.length > 0 ? findBestHeaderIndex(detectedHeaders, NAME_CANDIDATES) : null;
+  let pulseiraColumnIndex =
+    detectedHeaders.length > 0
+      ? findBestHeaderIndex(detectedHeaders, PULSEIRA_CANDIDATES)
+      : null;
+
+  let nomeColumnIndex =
+    detectedHeaders.length > 0
+      ? findBestHeaderIndex(detectedHeaders, NAME_CANDIDATES)
+      : null;
+
   const hasManualPulseiraSelection = Boolean(options.selectedPulseiraColumnKey);
 
   if (options.selectedPulseiraColumnKey) {
@@ -314,17 +326,18 @@ function parseSheetData(
   const rows: XlsxPulseiraRow[] = [];
 
   if (pulseiraColumnIndex !== null) {
-    for (let rowIndex = dataStartRow; rowIndex < rawData.length; rowIndex += 1) {
-      const row = rawData[rowIndex] ?? [];
+    for (let rowIndex = dataStartRow; rowIndex < rawData.length; rowIndex++) {
+      const row = rawData[rowIndex];
+      if (!Array.isArray(row)) continue;
       if (rowContainsBlockedPhrase(row)) continue;
 
-      const codigo = extractCode(row[pulseiraColumnIndex], hasManualPulseiraSelection);
-      if (!codigo) continue;
+      const code = extractCode(row[pulseiraColumnIndex], hasManualPulseiraSelection);
+      if (!code) continue;
 
       const nome = nomeColumnIndex !== null ? normalizeName(row[nomeColumnIndex]) : '';
 
       rows.push({
-        codigo,
+        codigo: code,
         nome,
         sheetName,
         rowNumber: rowIndex + 1,
@@ -332,12 +345,11 @@ function parseSheetData(
     }
   }
 
-  return {
-    rows,
-    columns,
-    pulseiraColumn: pulseiraColumnIndex !== null ? displayHeaders[pulseiraColumnIndex] : null,
-    nomeColumn: nomeColumnIndex !== null ? displayHeaders[nomeColumnIndex] : null,
-  };
+  const pulseiraColumn =
+    pulseiraColumnIndex !== null ? displayHeaders[pulseiraColumnIndex] : null;
+  const nomeColumn = nomeColumnIndex !== null ? displayHeaders[nomeColumnIndex] : null;
+
+  return { rows, pulseiraColumn, nomeColumn, columns };
 }
 
 export async function parseXlsxPulseiras(
@@ -362,7 +374,6 @@ export async function parseXlsxPulseiras(
     if (columns.length === 0 && parsed.columns.length > 0) {
       columns = parsed.columns;
     }
-
     if (!pulseiraColumn && parsed.pulseiraColumn) pulseiraColumn = parsed.pulseiraColumn;
     if (!nomeColumn && parsed.nomeColumn) nomeColumn = parsed.nomeColumn;
 

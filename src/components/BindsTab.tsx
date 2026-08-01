@@ -7,73 +7,30 @@ import {
 } from '../utils/pulseiras';
 
 interface BindsTabProps {
+  pulseiras: Pulseira[];
   binds: BindEntry[];
   setBinds: (b: BindEntry[] | ((prev: BindEntry[]) => BindEntry[])) => void;
-  pulseiras: Pulseira[];
   addLog: (log: Omit<LogEntry, 'id' | 'timestamp'>) => void;
 }
 
-const F_KEYS = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'];
 const NUMPAD_KEYS = [
-  'NUMPAD0',
-  'NUMPAD1',
-  'NUMPAD2',
-  'NUMPAD3',
-  'NUMPAD4',
-  'NUMPAD5',
-  'NUMPAD6',
-  'NUMPAD7',
-  'NUMPAD8',
-  'NUMPAD9',
-  'NUMPADADD',
-  'NUMPADMINUS',
-  'NUMPADMUL',
-  'NUMPADDIV',
-  'NUMPADENTER',
-  'NUMPADDECIMAL',
+  'NUMPAD0', 'NUMPAD1', 'NUMPAD2', 'NUMPAD3', 'NUMPAD4',
+  'NUMPAD5', 'NUMPAD6', 'NUMPAD7', 'NUMPAD8', 'NUMPAD9',
+  'NUMPADADD', 'NUMPADMINUS', 'NUMPADMUL', 'NUMPADDIV', 'NUMPADDECIMAL',
+  'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
 ];
-const EXTRA_KEYS = ['INSERT', 'DELETE', 'HOME', 'END', 'PAGEUP', 'PAGEDOWN', 'BACKSPACE'];
 
 const BATCH_SEPARATORS = [
-  { label: 'Ponto e vírgula ;', value: ';' },
-  { label: 'Nova linha', value: '\n' },
-  { label: 'Pipe |', value: '|' },
-  { label: 'Espaço', value: ' ' },
+  { value: ';', label: 'Ponto e vírgula (;)' },
+  { value: '\\n', label: 'Nova linha' },
+  { value: ' && ', label: '&& (encadeado)' },
 ];
 
-function renderKeyOptions(usedKeys: string[]) {
-  return (
-    <>
-      <optgroup label="Teclas de Função">
-        {F_KEYS.map((k) => (
-          <option key={k} value={k} disabled={usedKeys.includes(k)}>
-            {k} {usedKeys.includes(k) ? '(em uso)' : ''}
-          </option>
-        ))}
-      </optgroup>
-      <optgroup label="Numpad">
-        {NUMPAD_KEYS.map((k) => (
-          <option key={k} value={k} disabled={usedKeys.includes(k)}>
-            {k} {usedKeys.includes(k) ? '(em uso)' : ''}
-          </option>
-        ))}
-      </optgroup>
-      <optgroup label="Outras Teclas">
-        {EXTRA_KEYS.map((k) => (
-          <option key={k} value={k} disabled={usedKeys.includes(k)}>
-            {k} {usedKeys.includes(k) ? '(em uso)' : ''}
-          </option>
-        ))}
-      </optgroup>
-    </>
-  );
-}
-
-export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTabProps) {
-  const [key, setKey] = useState('F8');
+export default function BindsTab({ pulseiras, binds, setBinds, addLog }: BindsTabProps) {
+  const [key, setKey] = useState('NUMPAD0');
+  const [tipo, setTipo] = useState<'locpulseira' | 'custom'>('locpulseira');
   const [codigoPulseira, setCodigoPulseira] = useState('');
   const [descricao, setDescricao] = useState('');
-  const [tipo, setTipo] = useState<'locpulseira' | 'custom'>('locpulseira');
   const [customCmd, setCustomCmd] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -238,23 +195,17 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
             Cria binds de teclado para executar comandos de pulseira no F8 do FiveM.
           </p>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg font-medium text-sm transition-colors flex-shrink-0"
-        >
-          ➕ Novo Bind
-        </button>
         {binds.length > 0 && (
           <>
             <button
               onClick={handleCopyAll}
-              className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-lg font-medium text-sm transition-colors flex-shrink-0"
+              className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white px-4 py-2.5 rounded-lg font-medium text-sm transition-colors"
             >
               📋 Copiar Todos
             </button>
             <button
               onClick={handleExportCFG}
-              className="flex items-center gap-2 bg-green-700 hover:bg-green-600 text-white px-4 py-2.5 rounded-lg font-medium text-sm transition-colors flex-shrink-0"
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-lg font-medium text-sm transition-colors"
             >
               💾 Exportar .cfg
             </button>
@@ -274,7 +225,7 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
 
       <div className="bg-purple-900/20 border border-purple-800 rounded-xl p-5 space-y-4">
         <div>
-          <h3 className="text-white font-semibold text-sm">⚡ Bind com “Copiar Todos”</h3>
+          <h3 className="text-white font-semibold text-sm">⚡ Bind com "Copiar Todos"</h3>
           <p className="text-gray-400 text-xs mt-1">
             Escolhe uma tecla e cria automaticamente um bind do tipo:
             <span className="font-mono text-green-400"> bind keyboard TECLA "locpulseira ...;locpulseira ..."</span>
@@ -289,31 +240,35 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
               <select
                 value={batchKey}
                 onChange={(e) => setBatchKey(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
               >
-                {renderKeyOptions(usedKeys)}
+                {NUMPAD_KEYS.map((k) => (
+                  <option key={k} value={k} disabled={usedKeys.includes(k)}>
+                    {k} {usedKeys.includes(k) ? '(em uso)' : ''}
+                  </option>
+                ))}
               </select>
             </div>
 
             <div>
               <label className="text-gray-400 text-xs mb-2 block">Página das pulseiras guardadas</label>
               {batchPages.length === 0 ? (
-                <div className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-gray-500 text-sm">
+                <p className="text-gray-600 text-xs">
                   Ainda não existem páginas disponíveis.
-                </div>
+                </p>
               ) : (
-                <div className="flex flex-wrap gap-2">
-                  {batchPages.map((page, index) => (
+                <div className="flex flex-wrap gap-1">
+                  {batchPages.map((_page, index) => (
                     <button
-                      key={`batch-tab-${index}`}
+                      key={index}
                       onClick={() => setBatchPage(index)}
-                      className={`rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                         safeBatchPage === index
-                          ? 'border-purple-500 bg-purple-600 text-white'
-                          : 'border-gray-600 text-gray-400 hover:border-gray-400 hover:text-white'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-700 text-gray-400 hover:text-white border border-gray-600'
                       }`}
                     >
-                      Página {index + 1} · {page.length}
+                      Pág {index + 1} ({batchPages[index].length})
                     </button>
                   ))}
                 </div>
@@ -322,15 +277,15 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
 
             <div>
               <label className="text-gray-400 text-xs mb-2 block">Separador dos comandos</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-wrap gap-1">
                 {BATCH_SEPARATORS.map((item) => (
                   <button
-                    key={item.label}
+                    key={item.value}
                     onClick={() => setBatchSeparator(item.value)}
-                    className={`rounded-lg border px-3 py-2 text-xs text-left transition-all ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                       batchSeparator === item.value
-                        ? 'border-purple-500 bg-purple-600 text-white'
-                        : 'border-gray-600 text-gray-400 hover:border-gray-400'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-700 text-gray-400 hover:text-white border border-gray-600'
                     }`}
                   >
                     {item.label}
@@ -342,13 +297,13 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
 
           <div className="space-y-3">
             <div>
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center justify-between mb-2">
                 <label className="text-gray-400 text-xs block">Pulseiras incluídas</label>
                 <button
                   onClick={() => setSelectedBatchCodes([])}
-                  className="text-xs text-purple-300 hover:text-white transition-colors"
+                  className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
                 >
-                  Usar todas
+                  Limpar
                 </button>
               </div>
               <div className="bg-gray-800 border border-gray-600 rounded-lg p-3 max-h-36 overflow-y-auto flex flex-wrap gap-2">
@@ -361,10 +316,10 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
                       <button
                         key={pulseira.id}
                         onClick={() => toggleBatchCode(pulseira.codigo)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-mono border transition-all ${
+                        className={`px-2 py-1 rounded text-xs font-mono transition-colors ${
                           active
-                            ? 'bg-purple-600 border-purple-500 text-white'
-                            : 'border-gray-600 text-gray-400 hover:border-gray-400 hover:text-white'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-700 text-gray-400 hover:text-white'
                         }`}
                       >
                         {pulseira.codigo}
@@ -382,38 +337,18 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
 
             {batchPages.length > 0 && (
               <div className="rounded-lg border border-gray-700 bg-gray-950 p-3 space-y-3">
-                <div className="flex items-center justify-between gap-3">
+                <div>
                   <label className="text-gray-400 text-xs block">Página do bind</label>
                   <span className="text-xs text-gray-500">
                     Página {safeBatchPage + 1} de {batchPages.length}
                   </span>
                 </div>
-                <select
-                  value={safeBatchPage}
-                  onChange={(e) => setBatchPage(Number(e.target.value))}
-                  className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-                >
-                  {batchPages.map((page, index) => (
-                    <option key={`batch-page-${index}`} value={index}>
-                      Página {index + 1} — {page.length} pulseiras
-                    </option>
+                <div className="flex flex-wrap gap-1">
+                  {currentBatchPageCodes.map((code) => (
+                    <span key={code} className="px-2 py-0.5 bg-gray-800 text-green-400 text-xs font-mono rounded">
+                      {code}
+                    </span>
                   ))}
-                </select>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setBatchPage((prev) => Math.max(prev - 1, 0))}
-                    disabled={safeBatchPage === 0}
-                    className="flex-1 px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-gray-300"
-                  >
-                    Página anterior
-                  </button>
-                  <button
-                    onClick={() => setBatchPage((prev) => Math.min(prev + 1, batchPages.length - 1))}
-                    disabled={safeBatchPage >= batchPages.length - 1}
-                    className="flex-1 px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-xs text-gray-300"
-                  >
-                    Página seguinte
-                  </button>
                 </div>
               </div>
             )}
@@ -435,10 +370,15 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
         <div className="flex flex-col sm:flex-row gap-2">
           <button
             onClick={handleCreateBatchBind}
-            disabled={pulseiras.length === 0 || currentBatchPageCodes.length === 0}
-            className="bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
+            className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
           >
-            Criar Bind da página {batchPages.length > 0 ? safeBatchPage + 1 : 0}
+            ⚡ Criar Bind em Lote
+          </button>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
+          >
+            {showForm ? '✕ Fechar' : '➕ Novo Bind Individual'}
           </button>
           <p className="text-gray-500 text-xs self-center">
             Escolhe a tecla e a página. O bind é criado só com as pulseiras dessa página.
@@ -453,23 +393,19 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
           <div className="flex gap-2">
             <button
               onClick={() => setTipo('locpulseira')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all ${
-                tipo === 'locpulseira'
-                  ? 'bg-blue-600 border-blue-500 text-white'
-                  : 'border-gray-600 text-gray-400 hover:border-gray-400'
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                tipo === 'locpulseira' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400'
               }`}
             >
               📍 locpulseira
             </button>
             <button
               onClick={() => setTipo('custom')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all ${
-                tipo === 'custom'
-                  ? 'bg-purple-600 border-purple-500 text-white'
-                  : 'border-gray-600 text-gray-400 hover:border-gray-400'
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                tipo === 'custom' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400'
               }`}
             >
-              ⚙️ Comando Custom
+              ⚙️ Custom
             </button>
           </div>
 
@@ -481,7 +417,11 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
                 onChange={(e) => setKey(e.target.value)}
                 className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
               >
-                {renderKeyOptions(usedKeys)}
+                {NUMPAD_KEYS.map((k) => (
+                  <option key={k} value={k} disabled={usedKeys.includes(k)}>
+                    {k} {usedKeys.includes(k) ? '(em uso)' : ''}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -492,19 +432,19 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
                   <select
                     value={codigoPulseira}
                     onChange={(e) => setCodigoPulseira(e.target.value)}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 font-mono"
+                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
                   >
-                    <option value="">Selecionar pulseira...</option>
+                    <option value="">Selecionar...</option>
                     {pulseiras.map((p) => (
                       <option key={p.id} value={p.codigo}>
-                        {p.codigo} {p.descricao !== p.codigo ? `— ${p.descricao}` : ''}
+                        {p.codigo} — {p.descricao}
                       </option>
                     ))}
                   </select>
                 ) : (
                   <input
                     type="text"
-                    placeholder="ex: PSS54950"
+                    placeholder="Ex: PSS54950"
                     value={codigoPulseira}
                     onChange={(e) => setCodigoPulseira(e.target.value.toUpperCase())}
                     className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm font-mono"
@@ -516,7 +456,7 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
                 <label className="text-gray-400 text-xs mb-1 block">Comando Custom *</label>
                 <input
                   type="text"
-                  placeholder="ex: e dance"
+                  placeholder="Ex: say Olá"
                   value={customCmd}
                   onChange={(e) => setCustomCmd(e.target.value)}
                   className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm font-mono"
@@ -529,7 +469,7 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
             <label className="text-gray-400 text-xs mb-1 block">Descrição (opcional)</label>
             <input
               type="text"
-              placeholder="ex: Localizar PSS54950"
+              placeholder="Descrição do bind"
               value={descricao}
               onChange={(e) => setDescricao(e.target.value)}
               className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-sm"
@@ -545,20 +485,12 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
             </div>
           )}
 
-          <div className="flex gap-2 pt-1">
-            <button
-              onClick={handleAdd}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
-            >
-              Criar Bind
-            </button>
-            <button
-              onClick={() => setShowForm(false)}
-              className="bg-gray-700 hover:bg-gray-600 text-gray-300 px-5 py-2 rounded-lg text-sm font-medium transition-colors"
-            >
-              Cancelar
-            </button>
-          </div>
+          <button
+            onClick={handleAdd}
+            className="w-full bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
+          >
+            ✅ Criar Bind
+          </button>
         </div>
       )}
 
@@ -567,32 +499,20 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
           <p className="text-gray-400 text-xs font-medium mb-3">🎮 Numpad — Binds Ativos</p>
           <div className="grid grid-cols-4 gap-2 max-w-xs">
             {[
-              'NUMPAD7',
-              'NUMPAD8',
-              'NUMPAD9',
-              'NUMPADDIV',
-              'NUMPAD4',
-              'NUMPAD5',
-              'NUMPAD6',
-              'NUMPADMUL',
-              'NUMPAD1',
-              'NUMPAD2',
-              'NUMPAD3',
-              'NUMPADMINUS',
-              'NUMPAD0',
-              '',
-              'NUMPADDECIMAL',
-              'NUMPADADD',
+              'NUMPAD7', 'NUMPAD8', 'NUMPAD9', 'NUMPADDIV',
+              'NUMPAD4', 'NUMPAD5', 'NUMPAD6', 'NUMPADMUL',
+              'NUMPAD1', 'NUMPAD2', 'NUMPAD3', 'NUMPADMINUS',
+              'NUMPAD0', '', 'NUMPADDECIMAL', 'NUMPADADD',
             ].map((k, i) => {
               if (!k) return <div key={i} />;
               const bind = binds.find((b) => b.key === k);
               return (
                 <div
                   key={k}
-                  className={`rounded-lg p-2 text-center text-xs border ${
+                  className={`rounded-lg p-2 text-center text-xs ${
                     bind
                       ? 'bg-blue-900/40 border-blue-600 text-blue-300'
-                      : 'bg-gray-700 border-gray-600 text-gray-500'
+                      : 'bg-gray-700/40 border-gray-600 text-gray-500'
                   }`}
                   title={bind ? bind.comando : k}
                 >
@@ -614,14 +534,9 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
       ) : (
         <div className="space-y-2">
           {binds.map((bind) => (
-            <div
-              key={bind.id}
-              className="bg-gray-800 border border-gray-700 rounded-xl p-4 flex items-center gap-4"
-            >
+            <div key={bind.id} className="bg-gray-800 border border-gray-700 rounded-xl p-4 flex items-center gap-4">
               <div className="flex-shrink-0">
-                <div className="bg-gray-700 border border-gray-500 rounded-lg px-3 py-2 text-center min-w-16">
-                  <p className="text-white font-bold text-sm">{bind.key}</p>
-                </div>
+                <p className="text-white font-bold text-sm">{bind.key}</p>
               </div>
 
               <div className="flex-1 min-w-0">
@@ -631,18 +546,20 @@ export default function BindsTab({ binds, setBinds, pulseiras, addLog }: BindsTa
                 </code>
               </div>
 
-              <div className="flex gap-2 flex-shrink-0">
+              <div className="flex gap-2">
                 <button
                   onClick={() => handleCopy(bind)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                    copied === bind.id ? 'bg-green-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    copied === bind.id
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-700 text-gray-400 hover:text-white'
                   }`}
                 >
                   {copied === bind.id ? '✅' : '📋'}
                 </button>
                 <button
                   onClick={() => handleRemove(bind)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-900/30 hover:bg-red-900/60 text-red-400 transition-colors border border-red-900"
+                  className="px-3 py-1.5 bg-red-900/50 text-red-400 hover:bg-red-800/60 rounded-lg text-xs font-medium transition-colors border border-red-800"
                 >
                   🗑️
                 </button>

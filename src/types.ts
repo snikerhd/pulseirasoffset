@@ -32,3 +32,12 @@ export interface ProfileEntry {
 }
 
 export type Tab = 'pulseiras' | 'logs' | 'binds' | 'gerador';
+
+export interface BackupPayload {
+  version: number;
+  exportedAt: string;
+  pulseiras: Pulseira[];
+  logs: LogEntry[];
+  binds: BindEntry[];
+  profiles: ProfileEntry[];
+}

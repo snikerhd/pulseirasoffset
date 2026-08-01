@@ -134,145 +134,112 @@ export default function GeradorTab({ pulseiras, addLog }: GeradorTabProps) {
             </button>
           </div>
 
-          {pulseiras.length > 0 && (
-            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 space-y-3">
-              <h3 className="text-white font-semibold text-sm flex items-center gap-2">⌚ Das Pulseiras Guardadas</h3>
-              <p className="text-gray-500 text-xs">
-                {selectedPulseiras.length === 0
-                  ? `Sem seleção manual: o gerador usa até ${MAX_PULSEIRAS_PER_COMMAND}`
-                  : `${selectedPulseiras.length} selecionadas`}
-              </p>
-              <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto">
-                {pulseiras.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => togglePulseira(p.codigo)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium border transition-all ${
-                      selectedPulseiras.includes(p.codigo)
-                        ? 'bg-blue-600 border-blue-500 text-white'
-                        : 'border-gray-600 text-gray-400 hover:border-gray-400 hover:text-white'
-                    }`}
-                  >
-                    {p.codigo}
-                  </button>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={gerarFromPulseiras}
-                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  {selectedPulseiras.length === 0 ? `⚡ Gerar até ${MAX_PULSEIRAS_PER_COMMAND}` : `⚡ Gerar ${Math.min(selectedPulseiras.length, MAX_PULSEIRAS_PER_COMMAND)}`}
-                </button>
-                {selectedPulseiras.length > 0 && (
-                  <button
-                    onClick={() => setSelectedPulseiras([])}
-                    className="bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-2 rounded-lg text-sm transition-colors"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-4">
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 space-y-3">
-            <h3 className="text-white font-semibold text-sm">⚙️ Configuração</h3>
-
+            <h3 className="text-white font-semibold text-sm flex items-center gap-2">⚙️ Opções</h3>
             <div>
               <label className="text-gray-400 text-xs mb-1 block">Prefixo do comando</label>
               <input
                 type="text"
                 value={prefix}
                 onChange={(e) => setPrefix(e.target.value)}
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-sm font-mono"
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-blue-500"
               />
             </div>
-
             <div>
-              <label className="text-gray-400 text-xs mb-2 block">Separador entre comandos</label>
-              <div className="grid grid-cols-2 gap-2">
+              <label className="text-gray-400 text-xs mb-2 block">Separador</label>
+              <div className="flex flex-wrap gap-2">
                 {exemplos.map((ex) => (
                   <button
-                    key={ex.label}
+                    key={ex.value}
                     onClick={() => setSeparator(ex.value)}
-                    className={`px-3 py-2 rounded-lg text-xs border transition-all text-left ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                       separator === ex.value
-                        ? 'bg-blue-600 border-blue-500 text-white'
-                        : 'border-gray-600 text-gray-400 hover:border-gray-400'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-700 text-gray-400 hover:text-white border border-gray-600'
                     }`}
                   >
                     {ex.label}
                   </button>
                 ))}
               </div>
-              <div className="mt-2">
-                <label className="text-gray-400 text-xs mb-1 block">Ou custom:</label>
-                <input
-                  type="text"
-                  value={separator}
-                  onChange={(e) => setSeparator(e.target.value)}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-sm font-mono"
-                  placeholder=";"
-                />
-              </div>
             </div>
           </div>
+        </div>
 
+        <div className="space-y-4">
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-white font-semibold text-sm">📤 Resultado</h3>
-              {resultado && <span className="text-gray-500 text-xs">{resultadoCount} comandos</span>}
-            </div>
-
-            {limitMessage && (
-              <div className="rounded-lg border border-amber-800 bg-amber-900/20 px-3 py-2 text-xs text-amber-300">
-                {limitMessage}
-              </div>
-            )}
-
-            {resultado ? (
-              <>
-                <div className="bg-gray-900 rounded-lg p-3 border border-gray-700 max-h-48 overflow-y-auto">
-                  <pre className="text-green-400 text-xs font-mono whitespace-pre-wrap break-all leading-relaxed">
-                    {resultado}
-                  </pre>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleCopy}
-                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
-                      copied ? 'bg-green-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
-                    }`}
-                  >
-                    {copied ? '✅ Copiado!' : '📋 Copiar Resultado'}
-                  </button>
-                  <button
-                    onClick={() => setResultado('')}
-                    className="bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-2 rounded-lg text-sm transition-colors"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="bg-gray-900/50 rounded-lg p-6 border border-dashed border-gray-700 text-center text-gray-600 text-sm">
-                O resultado gerado aparece aqui
-              </div>
-            )}
-          </div>
-
-          <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
-            <p className="text-gray-400 text-xs font-medium mb-2">📖 Exemplo de output com limite ativo</p>
-            <code className="text-green-400 text-xs font-mono block bg-gray-900 rounded p-2">
-              locpulseira PSS54950;locpulseira PSS52414
-            </code>
-            <p className="text-gray-600 text-xs mt-2">
-              Se entrarem mais de {MAX_PULSEIRAS_PER_COMMAND}, o sistema mantém todas guardadas mas só gera/copía as primeiras {MAX_PULSEIRAS_PER_COMMAND} dessa vez.
+            <h3 className="text-white font-semibold text-sm flex items-center gap-2">📦 Pulseiras Guardadas</h3>
+            <p className="text-gray-500 text-xs">
+              Clica nas pulseiras para selecionar. Se não selecionares nenhuma, usa todas.
             </p>
+            {pulseiras.length === 0 ? (
+              <p className="text-gray-600 text-xs">Nenhuma pulseira guardada.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
+                {pulseiras.map((p) => {
+                  const active = selectedPulseiras.includes(p.codigo);
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => togglePulseira(p.codigo)}
+                      className={`px-2 py-1 rounded text-xs font-mono transition-colors ${
+                        active
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-700 text-gray-400 hover:text-white border border-gray-600'
+                      }`}
+                    >
+                      {p.codigo}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <div className="text-xs text-gray-500">
+              {selectedPulseiras.length === 0
+                ? `Todas as ${pulseiras.length} pulseiras serão usadas`
+                : `${selectedPulseiras.length} selecionadas`}
+            </div>
+            <button
+              onClick={gerarFromPulseiras}
+              disabled={pulseiras.length === 0}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              📦 Gerar das Guardadas
+            </button>
           </div>
+
+          {/* Resultado */}
+          {resultado && (
+            <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-white font-semibold text-sm">📄 Resultado ({resultadoCount} comandos)</h3>
+                <button
+                  onClick={handleCopy}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    copied
+                      ? 'bg-green-600 text-white'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
+                >
+                  {copied ? '✅ Copiado!' : '📋 Copiar'}
+                </button>
+              </div>
+              <code className="block text-green-400 text-xs font-mono whitespace-pre-wrap break-all bg-gray-950 rounded-lg p-3 max-h-48 overflow-y-auto border border-gray-700">
+                {resultado}
+              </code>
+              {limitMessage && (
+                <p className="text-amber-400 text-xs">{limitMessage}</p>
+              )}
+            </div>
+          )}
+
+          {!resultado && (
+            <div className="text-center py-12 text-gray-500">
+              <div className="text-5xl mb-3">⚡</div>
+              <p className="text-lg font-medium text-gray-400">Sem resultado</p>
+              <p className="text-sm mt-1">Insere códigos ou usa as pulseiras guardadas para gerar comandos</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

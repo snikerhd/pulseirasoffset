@@ -152,14 +152,19 @@ export default function App() {
               </button>
               <label className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer">
                 ⬆️ Importar Backup
-                <input type="file" accept="application/json,.json" className="hidden" onChange={handleImportBackup} />
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleImportBackup}
+                  className="hidden"
+                />
               </label>
             </div>
           </div>
 
           {backupMessage && (
-            <div className="rounded-xl border border-emerald-800 bg-emerald-900/20 px-4 py-3 text-sm text-emerald-300">
-              {backupMessage}
+            <div className="rounded-xl border border-green-800 bg-green-900/20 px-4 py-3">
+              <p className="text-green-400 text-sm">{backupMessage}</p>
             </div>
           )}
         </div>
@@ -177,13 +182,20 @@ export default function App() {
         )}
         {activeTab === 'logs' && <LogsTab logs={logs} setLogs={setLogs} />}
         {activeTab === 'binds' && (
-          <BindsTab binds={binds} setBinds={setBinds} pulseiras={pulseiras} addLog={addLog} />
+          <BindsTab
+            binds={binds}
+            setBinds={setBinds}
+            pulseiras={pulseiras}
+            addLog={addLog}
+          />
         )}
         {activeTab === 'gerador' && <GeradorTab pulseiras={pulseiras} addLog={addLog} />}
       </main>
 
-      <footer className="border-t border-gray-800 mt-10 py-4 text-center text-gray-600 text-xs">
-        <p>FiveM Pulseiras Manager — Dados guardados localmente no browser. Em modo privado, faz backup para não perder tudo.</p>
+      <footer className="border-t border-gray-800 py-4 mt-8">
+        <p className="text-center text-gray-600 text-xs">
+          FiveM Pulseiras Manager · Gestor de Pulseiras Eletrónicas
+        </p>
       </footer>
     </div>
   );
